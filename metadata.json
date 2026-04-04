@@ -1,0 +1,5 @@
+{
+  "name": "Remix: CyberDetective: El Árbol de la Verdad",
+  "description": "Un juego educativo de ciberdetective que utiliza estructuras de datos (árboles AVL) para investigar casos de ciberacoso y tomar decisiones éticas.",
+  "requestFramePermissions": []
+}

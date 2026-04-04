@@ -1,0 +1,93 @@
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=VT323&family=Share+Tech+Mono&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-mono: "Share Tech Mono", "Courier Prime", ui-monospace, SFMono-Regular, monospace;
+  --font-vt323: "VT323", monospace;
+  
+  --color-cyber-orange: #f69322;
+  --color-cyber-orange-dim: #8B5A2B;
+  --color-cyber-beige: #D2C1A5;
+  --color-cyber-bg: #000000;
+  --color-cyber-border: #5A3D1E;
+  --color-paper-bg: #d1c1a5;
+}
+
+@layer base {
+  body {
+    @apply bg-cyber-bg text-cyber-orange font-mono overflow-hidden h-screen w-screen select-none;
+  }
+}
+
+@layer components {
+  .retro-border {
+    @apply border-2 border-cyber-orange;
+  }
+
+  .panel-header {
+    @apply bg-cyber-orange text-black font-bold px-2 py-0.5 text-sm flex justify-between items-center uppercase;
+  }
+
+  .grid-bg {
+    background-image: 
+      linear-gradient(rgba(246, 147, 34, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(246, 147, 34, 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .scanline {
+    @apply fixed top-0 left-0 w-full h-0.5 bg-cyber-orange/10 z-50 pointer-events-none;
+    animation: scan 8s linear infinite;
+  }
+
+  .paper-texture {
+    @apply bg-paper-bg text-gray-900 shadow-[4px_4px_0px_#000];
+  }
+
+  .stamp {
+    @apply border-2 border-gray-900 -rotate-12 px-2 py-1 font-bold inline-block uppercase;
+  }
+
+  .btn-action {
+    @apply border border-cyber-orange text-cyber-orange px-3 py-1 uppercase text-xs transition-all hover:bg-cyber-orange hover:text-black;
+  }
+
+  .btn-primary {
+    @apply bg-cyber-orange text-black font-bold px-4 py-2 uppercase transition-all hover:brightness-110;
+  }
+}
+
+@keyframes scan {
+  0% { top: 0; }
+  100% { top: 100%; }
+}
+
+/* CRT Flicker Effect */
+@keyframes flicker {
+  0% { opacity: 0.97; }
+  5% { opacity: 0.95; }
+  10% { opacity: 0.9; }
+  15% { opacity: 0.95; }
+  20% { opacity: 0.98; }
+  25% { opacity: 0.95; }
+  30% { opacity: 0.9; }
+  35% { opacity: 0.95; }
+  40% { opacity: 0.98; }
+  45% { opacity: 0.95; }
+  50% { opacity: 0.9; }
+  55% { opacity: 0.95; }
+  60% { opacity: 0.98; }
+  65% { opacity: 0.95; }
+  70% { opacity: 0.9; }
+  75% { opacity: 0.95; }
+  80% { opacity: 0.98; }
+  85% { opacity: 0.95; }
+  90% { opacity: 0.9; }
+  95% { opacity: 0.95; }
+  100% { opacity: 0.98; }
+}
+
+.crt-effect {
+  animation: flicker 0.15s infinite;
+}
+
