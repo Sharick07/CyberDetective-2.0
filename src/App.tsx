@@ -1,27 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
-import { useGameState } from './logic/useGameState';
-import { CRIME_INFO, CrimeType } from './types/game';
-import { AVLTree } from './logic/avlTree';
-import { 
-  Terminal, 
-  Search, 
-  FileText, 
-  Map as MapIcon, 
-  Layout, 
-  HelpCircle, 
-  Settings, 
+import { useGameState, DayTransitionInfo } from './logic/useGameState';
+import { CRIME_INFO, CrimeType, GameNode } from './types/game';
+import {
+  Terminal,
+  Search,
+  FileText,
   LogOut,
-  Printer,
   Coffee,
   X,
   Maximize2,
   Minus,
-  AlertTriangle,
-  ShieldCheck,
-  DollarSign,
-  User
 } from 'lucide-react';
 
 // --- Types ---
@@ -29,9 +19,26 @@ type Screen = 'boot' | 'intro' | 'main-menu' | 'case-tree' | 'investigation-map'
 
 // --- Components ---
 
-const Header = ({ title, subtitle, screen, day, level }: { title: string; subtitle?: string; screen: Screen; day: number; level: number }) => (
+const INTERNAL_SCREENS: Screen[] = ['case-tree', 'investigation-map', 'tactical-board'];
+
+const Header = ({ title, subtitle, screen, day, level, onNavigate }: {
+  title: string;
+  subtitle?: string;
+  screen: Screen;
+  day: number;
+  level: number;
+  onNavigate: (s: Screen) => void;
+}) => (
   <header className="retro-border bg-black flex items-center justify-between px-3 py-1 text-sm z-50">
     <div className="flex items-center space-x-4">
+      {INTERNAL_SCREENS.includes(screen) && (
+        <button
+          onClick={() => onNavigate('main-menu')}
+          className="btn-action text-[10px] px-2 py-0.5 shrink-0"
+        >
+          ← VOLVER
+        </button>
+      )}
       <span className="font-bold uppercase tracking-wider">{title}</span>
       <span className="text-xs font-vt323">🕒 DÍA {day} - 10:14 📁</span>
     </div>
@@ -52,7 +59,7 @@ const Header = ({ title, subtitle, screen, day, level }: { title: string; subtit
 );
 
 const getLevelName = (level: number) => {
-  switch(level) {
+  switch (level) {
     case 1: return 'LAS PRIMERAS SEÑALES';
     case 2: return 'EL RUMOR VIRAL';
     case 3: return 'LA CUENTA FANTASMA';
@@ -85,7 +92,7 @@ const Footer = ({ message, amonestations, money }: { message?: string; amonestat
       <div className="flex items-center justify-between">
         <span className="text-2xl font-vt323 text-green-500">${money}</span>
         <div className="text-[8px] text-right opacity-60">
-          COSTO DIARIO: $150<br/>(RENTA + COMIDA)
+          COSTO DIARIO: $150<br />(RENTA + COMIDA)
         </div>
       </div>
     </div>
@@ -94,42 +101,53 @@ const Footer = ({ message, amonestations, money }: { message?: string; amonestat
 
 // --- New Screens ---
 
+const BOOT_SEQUENCE = [
+  "INICIANDO TERMINAL SECURE-OS...",
+  "CARGANDO MÓDULO DE ACCESIBILIDAD...",
+  "CONEXIÓN ESTABLECIDA CON: NETCITY CENTRAL.",
+  "SISTEMA: Bienvenido a NetCity. En nuestra ciudad digital, la conexión lo es todo. Foros, redes sociales, mensajería instantánea... los estudiantes viven en línea. Pero en los últimos meses, la red se ha oscurecido. Las alertas por casos de ciberacoso y bullying han saturado nuestros servidores. Lo que pasa en la pantalla, está destruyendo vidas en el mundo real.",
+  "PRESIONE [ENTER] PARA CONTINUAR"
+];
+
 const BootScreen = ({ onComplete }: { onComplete: () => void }) => {
   const [lines, setLines] = useState<string[]>([]);
-  const bootSequence = [
-    "INICIANDO TERMINAL SECURE-OS...",
-    "CARGANDO MÓDULO DE ACCESIBILIDAD...",
-    "CONEXIÓN ESTABLECIDA CON: NETCITY CENTRAL.",
-    "SISTEMA: Bienvenido a NetCity. En nuestra ciudad digital, la conexión lo es todo. Foros, redes sociales, mensajería instantánea... los estudiantes viven en línea. Pero en los últimos meses, la red se ha oscurecido. Las alertas por casos de ciberacoso y bullying han saturado nuestros servidores. Lo que pasa en la pantalla, está destruyendo vidas en el mundo real.",
-    "PRESIONE [ENTER] PARA CONTINUAR"
-  ];
+  const typingAudioRef = React.useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
+    typingAudioRef.current = new Audio('/Texto escribiendose.mp3');
+    typingAudioRef.current.volume = 0.5;
     let i = 0;
     const interval = setInterval(() => {
-      if (i < bootSequence.length) {
-        setLines(prev => [...prev, bootSequence[i]]);
+      if (i < BOOT_SEQUENCE.length) {
+        setLines(prev => [...prev, BOOT_SEQUENCE[i]]);
+        if (typingAudioRef.current) {
+          typingAudioRef.current.currentTime = 0;
+          typingAudioRef.current.play().catch(() => {});
+        }
         i++;
       } else {
         clearInterval(interval);
       }
     }, 800);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      typingAudioRef.current?.pause();
+    };
   }, []);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && lines.length >= bootSequence.length) onComplete();
+      if (e.key === 'Enter' && lines.length >= BOOT_SEQUENCE.length) onComplete();
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [lines]);
+  }, [lines, onComplete]);
 
   return (
     <div className="h-full flex flex-col items-start justify-center p-12 font-mono text-amber-500 bg-black">
       <div className="space-y-2">
         {lines.map((line, i) => (
-          <motion.p 
+          <motion.p
             key={i}
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
@@ -138,6 +156,14 @@ const BootScreen = ({ onComplete }: { onComplete: () => void }) => {
             {line}
           </motion.p>
         ))}
+        {lines.length >= BOOT_SEQUENCE.length && (
+          <button
+            onClick={onComplete}
+            className="mt-4 border border-amber-500 px-4 py-1 text-sm hover:bg-amber-500 hover:text-black transition-all"
+          >
+            [ PRESIONAR ENTER O CLICK AQUÍ ]
+          </button>
+        )}
       </div>
     </div>
   );
@@ -145,14 +171,14 @@ const BootScreen = ({ onComplete }: { onComplete: () => void }) => {
 
 const IntroScreen = ({ onComplete }: { onComplete: (name: string) => void }) => {
   const [name, setName] = useState('');
-  
+
   return (
     <div className="h-full flex flex-col items-center justify-center p-12 bg-black gap-8">
       <div className="retro-border p-8 max-w-2xl bg-black text-center space-y-6">
         <h2 className="text-2xl font-bold uppercase text-cyber-orange underline">Expediente #001: VALERIA</h2>
         <div className="flex gap-6 items-start text-left">
           <div className="w-32 h-40 border-2 border-cyber-orange bg-gray-900 flex items-center justify-center overflow-hidden grayscale opacity-50">
-             <img src="https://picsum.photos/seed/valeria/200/300" alt="Valeria" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            <img src="https://picsum.photos/seed/valeria/200/300" alt="Valeria" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
           </div>
           <div className="flex-1 space-y-4 text-sm">
             <p>SISTEMA: "Este es nuestro caso de prioridad máxima. Ella es Valeria, una estudiante de secundaria."</p>
@@ -160,13 +186,13 @@ const IntroScreen = ({ onComplete }: { onComplete: (name: string) => void }) => 
             <p className="text-red-500 font-bold animate-pulse">"Burlas públicas. Mensajes ofensivos. Ataques coordinados."</p>
           </div>
         </div>
-        
+
         <div className="space-y-4 pt-4 border-t border-cyber-orange/30">
           <p className="text-sm">AUTENTICANDO USUARIO: DETECTIVE ESPECIALISTA EN CRÍMENES DIGITALES.</p>
           <div className="flex flex-col items-center gap-2">
             <label className="text-xs uppercase opacity-70">Ingrese su nombre de identificación:</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="bg-black border-2 border-cyber-orange text-cyber-orange px-4 py-2 text-center focus:outline-none focus:ring-2 focus:ring-cyber-orange/50"
@@ -174,7 +200,7 @@ const IntroScreen = ({ onComplete }: { onComplete: (name: string) => void }) => 
               autoFocus
             />
           </div>
-          <button 
+          <button
             disabled={!name}
             onClick={() => onComplete(name)}
             className="btn-primary w-full disabled:opacity-50"
@@ -207,262 +233,107 @@ const MainMenu = ({ onNavigate, setShowHelp, setShowSettings, loadGame }: { onNa
   };
 
   return (
-  <div className="flex-1 grid grid-cols-12 gap-2 h-full overflow-hidden py-2">
-    <section className="col-span-3 flex flex-col gap-2">
-      <div className="retro-border flex-grow p-4 flex flex-col items-center justify-center bg-black">
-        <div className="paper-texture p-2 text-black w-full max-w-[200px]">
-          <div className="border-2 border-black p-1 mb-2">
-            <div className="w-full aspect-square bg-gray-400 flex items-center justify-center border-2 border-black overflow-hidden">
-              <img 
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEomVrD_0j_-0xgadr_XbiWMMc9xyqhUQ02m7LDaS28nY85Rahm0xShuzFbQ2Mzz_BXwZl75IBuYxzYMto9Jey1EhMC-adaubNCDbT7BAyPGWeVsfF-pBmtN5jsPs114poypSQwFd-qeFFAVar-aa_YeZWAOlL8CE65FgYaolizFxSYvl9UVR6VspfIotjuejMSx6kDnBHkvC95w94VUXupgMFvgdisMz7c8Y8OhLqaS12HZn-mCftWwvRuPhEwEjwrZwRyMzu3x4" 
-                alt="Detective Alex"
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-          </div>
-          <div className="text-center text-xs font-bold leading-tight uppercase">
-            Perfil de Alex<br/>(Detective)
-          </div>
-        </div>
-      </div>
-      <div className="retro-border p-2 bg-black">
-        <h2 className="text-xs font-bold uppercase">Perfil de Alex (Detective)</h2>
-      </div>
-    </section>
-
-    <section className="col-span-6 flex flex-col gap-2">
-      <div className="retro-border p-6 text-center flex flex-col items-center justify-center bg-black relative">
-        <div className="absolute top-1 right-1 flex gap-1">
-          <span className="text-[10px] border border-cyber-orange px-1">_</span>
-          <span className="text-[10px] border border-cyber-orange px-1">□</span>
-          <span className="text-[10px] border border-cyber-orange px-1">×</span>
-        </div>
-        <div className="border-4 border-cyber-orange p-4 mb-4">
-          <h1 className="text-4xl md:text-5xl font-black tracking-widest uppercase">CyberDetective</h1>
-        </div>
-        <h2 className="text-2xl font-bold mb-1 uppercase">El Árbol de la Verdad</h2>
-        <p className="text-sm mb-1">(V. 1.0)</p>
-        <p className="text-xs uppercase tracking-widest opacity-70">Sistema de investigación de ciberacoso</p>
-      </div>
-
-      <div className="retro-border flex-grow p-4 flex flex-col gap-3 items-center justify-center bg-black">
-        <button 
-          onClick={() => onNavigate('case-tree')}
-          className="w-full max-w-md py-2 border-2 border-cyber-orange bg-cyber-orange text-black font-bold hover:brightness-110 transition-all uppercase"
-        >
-          <span className="block text-sm">Nueva Investigación</span>
-          <span className="block text-[10px]">(Nivel 1: The First Signs)</span>
-        </button>
-        <button 
-          onClick={handleLoad}
-          className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
-        >
-          Cargar Expediente Guardado
-        </button>
-        <button 
-          onClick={() => setShowHelp(true)}
-          className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
-        >
-          <span className="block text-sm">Sistema de Ayuda</span>
-          <span className="block text-[10px]">(las reglas, árboles, etc.)</span>
-        </button>
-        <button 
-          onClick={() => setShowSettings(true)}
-          className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
-        >
-          <span className="block text-sm">Inclusión y Ajustes</span>
-          <span className="block text-[10px]">(Accesibilidad, selección apariencia)</span>
-        </button>
-        <button className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase">
-          Salir de la Terminal
-        </button>
-      </div>
-    </section>
-
-    <section className="col-span-3 flex flex-col gap-2">
-      <div className="retro-border flex-grow flex flex-col bg-black">
-        <div className="panel-header">Manual de Referencia Táctica</div>
-        <div className="flex-grow p-4 flex items-center justify-center">
-          <div className="paper-texture p-2 text-black w-full h-full max-h-[160px] flex gap-1">
-            <div className="flex-1 border-r border-black p-1 text-[8px] font-bold uppercase">Manual de Referencia Táctica</div>
-            <div className="flex-1 p-1 text-[8px] font-bold uppercase">Manual de Referencia Táctica</div>
-          </div>
-        </div>
-      </div>
-      <div className="retro-border flex-grow flex flex-col bg-black">
-        <div className="panel-header">Manual de Referencia Táctica</div>
-        <div className="flex-grow p-4 flex items-center justify-center">
-          <div className="paper-texture p-2 text-black w-full h-full max-h-[160px] flex flex-col justify-between relative">
-            <div className="flex gap-1 h-3/4">
-              <div className="flex-1 border-r border-black p-1 text-[8px] font-bold leading-tight uppercase">Manual de Referencia Táctica</div>
-              <div className="flex-1 p-1 text-[8px] font-bold leading-tight uppercase">Manual de Referencia Táctica (Vencedor)</div>
-            </div>
-            <div className="absolute bottom-2 right-2 stamp text-[8px] bg-paper-bg">
-              Manual de<br/>Referencia<br/>Táctica
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  </div>
-  );
-};
-
-const CaseTree = () => (
-  <div className="flex-1 flex space-x-2 overflow-hidden py-2">
-    <section className="w-1/4 flex flex-col space-y-2">
-      <div className="retro-border flex-1 flex flex-col bg-black">
-        <div className="panel-header">Dossier</div>
-        <div className="p-4 flex-1 flex items-center justify-center">
-          <div className="paper-texture w-full h-full p-4 relative text-sm overflow-hidden">
-            <div className="flex space-x-4 mb-4">
-              <div className="w-24 h-24 border-2 border-black/20 flex items-center justify-center bg-gray-400/20">
-                <img 
-                  src="https://lh3.googleusercontent.com/aida/ADBb0ugIvWmTfG5FZ1kvUwNrpp5RF81jBVLshCZnqE6yoWAz-dx1Z5io10VcajDVL2nHXaJIYl_OAAaVzUwOvgOVWTcLZO5LwHRnf2zcZMrFpgL8QEUGunEDfWyWXEg2LdPjFUaiKfwAglGcxa_0pc5cMDgmkA5j8sgWohbT0qk941OjIJrXWiRqsSCtS-rn8y3hGXjU0wf1b8HQpa_Rn-FkyqxmQ5j4hOL1DGcutQoVG7yF5BSsiQnvEhCKFqUZXc53YIuqdpl6zNrH" 
-                  alt="Valeria"
-                  className="w-full h-full object-cover opacity-80"
+    <div className="flex-1 grid grid-cols-12 gap-2 h-full overflow-hidden py-2">
+      <section className="col-span-3 flex flex-col gap-2">
+        <div className="retro-border flex-grow p-4 flex flex-col items-center justify-center bg-black">
+          <div className="paper-texture p-2 text-black w-full max-w-[200px]">
+            <div className="border-2 border-black p-1 mb-2">
+              <div className="w-full aspect-square bg-gray-400 flex items-center justify-center border-2 border-black overflow-hidden">
+                <img
+                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEomVrD_0j_-0xgadr_XbiWMMc9xyqhUQ02m7LDaS28nY85Rahm0xShuzFbQ2Mzz_BXwZl75IBuYxzYMto9Jey1EhMC-adaubNCDbT7BAyPGWeVsfF-pBmtN5jsPs114poypSQwFd-qeFFAVar-aa_YeZWAOlL8CE65FgYaolizFxSYvl9UVR6VspfIotjuejMSx6kDnBHkvC95w94VUXupgMFvgdisMz7c8Y8OhLqaS12HZn-mCftWwvRuPhEwEjwrZwRyMzu3x4"
+                  alt="Detective Alex"
+                  className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
                 />
               </div>
-              <div className="text-black">
-                <p className="font-bold border-b border-black/40 mb-1 uppercase">Expediente: Valeria</p>
-                <p className="text-[10px] font-bold uppercase">Reportes:</p>
-                <p className="text-[10px]">Mensajes ofensivos detectados (reincidentes)</p>
-              </div>
             </div>
-            <div className="absolute bottom-4 right-4">
-              <div className="stamp text-xl">Nivel 1</div>
+            <div className="text-center text-xs font-bold leading-tight uppercase">
+              Perfil de Alex<br />(Detective)
             </div>
           </div>
         </div>
-      </div>
-      <div className="retro-border flex-1 flex flex-col bg-black overflow-hidden">
-        <div className="panel-header">
-          <span>Evidencias Recolectadas</span>
-          <div className="flex space-x-1">
-            <span className="w-2 h-2 bg-cyber-orange"></span>
-            <span className="w-2 h-2 bg-cyber-orange"></span>
-          </div>
+        <div className="retro-border p-2 bg-black">
+          <h2 className="text-xs font-bold uppercase">Perfil de Alex (Detective)</h2>
         </div>
-        <div className="p-2 overflow-y-auto space-y-2">
-          <div className="bg-paper-bg p-2 text-gray-900 border border-black text-xs">
-            <div className="flex justify-between border-b border-black/20 mb-1 pb-1">
-              <span className="font-bold">Tweet - @ANON7834</span>
-              <span>✖</span>
-            </div>
-            <p>"¡Nadie te soporta, Valeria! 😠😠😠"</p>
-            <p className="mt-2 text-[10px] opacity-70 uppercase">Usuario: ANON 7834 (Cuenta Fantasma)</p>
-          </div>
-          <div className="bg-gray-800/50 p-2 text-orange-200 border border-cyber-orange/30 text-xs">
-            <div className="flex justify-between border-b border-cyber-orange/20 mb-1 pb-1 text-[10px]">
-              <span>Email - Dexio:</span>
-              <span>➖ 🔳 ✖</span>
-            </div>
-            <p>De: Dexio</p>
-            <p>Asunto: ...</p>
-          </div>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <section className="flex-1 flex flex-col space-y-2">
-      <div className="retro-border flex-1 flex flex-col bg-black grid-bg relative overflow-hidden">
-        <div className="panel-header">
-          <span>▼ Árbol Visual de los Casos (AVL - Balanceado)</span>
+      <section className="col-span-6 flex flex-col gap-2 overflow-y-auto min-h-0 cyber-scroll">
+        <div className="retro-border p-6 text-center flex flex-col items-center justify-center bg-black relative">
+          <div className="absolute top-1 right-1 flex gap-1">
+            <span className="text-[10px] border border-cyber-orange px-1">_</span>
+            <span className="text-[10px] border border-cyber-orange px-1">□</span>
+            <span className="text-[10px] border border-cyber-orange px-1">×</span>
+          </div>
+          <div className="border-4 border-cyber-orange p-4 mb-4">
+            <h1 className="text-4xl md:text-5xl font-black tracking-widest uppercase">CyberDetective</h1>
+          </div>
+          <h2 className="text-2xl font-bold mb-1 uppercase">El Árbol de la Verdad</h2>
+          <p className="text-sm mb-1">(V. 1.0)</p>
+          <p className="text-xs uppercase tracking-widest opacity-70">Sistema de investigación de ciberacoso</p>
         </div>
-        <div className="flex-1 p-8 flex flex-col items-center justify-start space-y-12 relative">
-          <div className="w-16 h-16 border-2 border-dashed border-cyber-orange/50 flex items-center justify-center">
-            <div className="w-4/5 h-4/5 bg-gray-800/40"></div>
-          </div>
-          <div className="flex space-x-24 relative">
-             {/* Lines would be here in a real SVG/Canvas implementation */}
-            <div className="w-16 h-16 border-2 border-dashed border-cyber-orange/50 flex items-center justify-center">
-              <div className="w-4/5 h-4/5 bg-gray-800/40"></div>
-            </div>
-            <div className="w-16 h-16 border-2 border-cyber-orange flex items-center justify-center relative shadow-[0_0_15px_rgba(246,147,34,0.5)]">
-              <div className="w-full h-full bg-cyber-orange/20"></div>
-              <span className="absolute -top-6 left-0 text-[8px] w-32 uppercase font-bold">Nuevo Incidente</span>
-            </div>
-          </div>
-          <div className="flex space-x-8">
-            <div className="w-16 h-16 border-2 border-dashed border-cyber-orange/30"></div>
-            <div className="w-16 h-16 border-2 border-dashed border-cyber-orange/30"></div>
-            <div className="w-16 h-16 border-2 border-dashed border-cyber-orange/10"></div>
-          </div>
-          
-          <div className="absolute right-4 top-10 flex flex-col items-center">
-            <span className="text-[8px] mb-2 uppercase font-bold">Lista de Inserción</span>
-            <div className="space-y-2">
-              <div className="w-8 h-8 border border-cyber-orange/50"></div>
-              <div className="w-8 h-8 border border-cyber-orange/50"></div>
-              <div className="w-8 h-8 border border-cyber-orange/50"></div>
-            </div>
-            <div className="mt-2 text-xs">▼</div>
-          </div>
-        </div>
-      </div>
-      <div className="retro-border h-24 flex items-center p-4 bg-black space-x-4">
-        <div className="text-sm font-bold w-32 leading-tight uppercase">Acciones del Detective</div>
-        <div className="flex-1 grid grid-cols-3 gap-2">
-          <button className="btn-primary h-full row-span-2 text-lg">Clasificar Delito</button>
-          <button className="btn-action">Insertar Nodo</button>
-          <button className="btn-action">Aprobar</button>
-          <button className="btn-action">Desestimar</button>
-          <button className="btn-action">Denegar</button>
-        </div>
-      </div>
-    </section>
 
-    <section className="w-1/3 flex flex-col space-y-2">
-      <div className="retro-border flex-1 flex flex-col bg-black">
-        <div className="panel-header">Código Penal Colombiano</div>
-        <div className="flex-1 p-3 overflow-y-auto space-y-3 bg-[#111]">
-          <div className="paper-texture flex p-3 text-gray-900 min-h-[220px]">
-            <div className="w-1/2 border-r border-black/20 pr-2">
-              <h3 className="font-bold text-sm mb-2 uppercase">Injuria (Art. 220):</h3>
-              <p className="text-[10px] leading-tight">Afectación del buen nombre mediante ofensas directas.</p>
-              <div className="mt-8 text-center text-xs opacity-50">1</div>
-            </div>
-            <div className="w-1/2 pl-2 relative">
-              <div className="space-y-2 text-[9px] font-bold uppercase">
-                <div className="flex items-center"><span className="w-3 h-3 border border-black mr-2"></span> Intención Ofensiva?</div>
-                <div className="flex items-center"><span className="w-3 h-3 border border-black mr-2"></span> Repetición?</div>
-                <div className="flex items-center"><span className="w-3 h-3 border border-black mr-2"></span> Afecta Reputación?</div>
-              </div>
-              <div className="absolute bottom-2 right-2 stamp text-[10px]">Injuria</div>
-              <div className="mt-4 text-center text-xs opacity-50">2</div>
-            </div>
-          </div>
-          <div className="paper-texture flex p-3 text-gray-900 min-h-[220px]">
-            <div className="w-1/2 border-r border-black/20 pr-2">
-              <h3 className="font-bold text-sm mb-2 uppercase">Calumnia (Art. 221)</h3>
-              <p className="text-[10px] leading-tight">Afectación del buen nombre mediante ofensas directas.</p>
-              <p className="font-bold mt-2 text-[10px] uppercase">Denuncia</p>
-              <div className="mt-4 space-y-1">
-                <div className="h-[1px] bg-black/40 w-full"></div>
-                <div className="h-[1px] bg-black/40 w-full"></div>
-                <div className="h-[1px] bg-black/40 w-full"></div>
-              </div>
-              <div className="mt-8 text-center text-xs opacity-50">4</div>
-            </div>
-            <div className="w-1/2 pl-2">
-              <h3 className="font-bold text-sm mb-2 uppercase">Calumnia (Art. 221)</h3>
-              <p className="text-[10px] leading-tight">Difusión de acusaciones falsas</p>
-              <p className="font-bold mt-2 text-[10px] uppercase">Denuncia</p>
-              <div className="mt-4 space-y-1">
-                <div className="h-[1px] bg-black/40 w-full"></div>
-                <div className="h-[1px] bg-black/40 w-full"></div>
-                <div className="h-[1px] bg-black/40 w-full"></div>
-              </div>
-              <div className="mt-8 text-center text-xs opacity-50">5</div>
+        <div className="retro-border flex-grow min-h-0 p-4 flex flex-col gap-3 items-center overflow-y-auto justify-center bg-black cyber-scroll">
+          <button
+            onClick={() => onNavigate('case-tree')}
+            className="w-full max-w-md py-2 border-2 border-cyber-orange bg-cyber-orange text-black font-bold hover:brightness-110 transition-all uppercase"
+          >
+            <span className="block text-sm">Nueva Investigación</span>
+            <span className="block text-[10px]">(Nivel 1: The First Signs)</span>
+          </button>
+          <button
+            onClick={handleLoad}
+            className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
+          >
+            Cargar Expediente Guardado
+          </button>
+          <button
+            onClick={() => setShowHelp(true)}
+            className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
+          >
+            <span className="block text-sm">Sistema de Ayuda</span>
+            <span className="block text-[10px]">(las reglas, árboles, etc.)</span>
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
+          >
+            <span className="block text-sm">Inclusión y Ajustes</span>
+            <span className="block text-[10px]">(Accesibilidad, selección apariencia)</span>
+          </button>
+          <button className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase">
+            Salir de la Terminal
+          </button>
+        </div>
+      </section>
+
+      <section className="col-span-3 flex flex-col gap-2">
+        <div className="retro-border flex-grow flex flex-col bg-black">
+          <div className="panel-header">Manual de Referencia Táctica</div>
+          <div className="flex-grow p-4 flex items-center justify-center">
+            <div className="paper-texture p-2 text-black w-full h-full max-h-[160px] flex gap-1">
+              <div className="flex-1 border-r border-black p-1 text-[8px] font-bold uppercase">Manual de Referencia Táctica</div>
+              <div className="flex-1 p-1 text-[8px] font-bold uppercase">Manual de Referencia Táctica</div>
             </div>
           </div>
         </div>
-      </div>
-    </section>
-  </div>
-);
+        <div className="retro-border flex-grow flex flex-col bg-black">
+          <div className="panel-header">Manual de Referencia Táctica</div>
+          <div className="flex-grow p-4 flex items-center justify-center">
+            <div className="paper-texture p-2 text-black w-full h-full max-h-[160px] flex flex-col justify-between relative">
+              <div className="flex gap-1 h-3/4">
+                <div className="flex-1 border-r border-black p-1 text-[8px] font-bold leading-tight uppercase">Manual de Referencia Táctica</div>
+                <div className="flex-1 p-1 text-[8px] font-bold leading-tight uppercase">Manual de Referencia Táctica (Vencedor)</div>
+              </div>
+              <div className="absolute bottom-2 right-2 stamp text-[8px] bg-paper-bg">
+                Manual de<br />Referencia<br />Táctica
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
 
 const InvestigationMap = () => (
   <div className="flex-1 grid grid-cols-12 gap-2 overflow-hidden py-2">
@@ -472,8 +343,8 @@ const InvestigationMap = () => (
         <div className="mt-6 flex flex-col gap-4">
           <div className="flex gap-4">
             <div className="w-24 h-32 border-2 border-black flex items-center justify-center bg-gray-300">
-              <img 
-                src="https://lh3.googleusercontent.com/aida/ADBb0ugrgReyL6jBC70aQ45n32o_AMNgiRsi-PXuyQF-CxPmbMmPmYqVXaIn_qB0DF3byAs6CgZyxH9Fpv9aGa1gEZZlPsvDcAoBKtfSyAvR-8mL2XfCVXen3Xk-3aGp9a5kaHngklo86-MniY1YZj9tmFTnulxcvYw23nClMiBK-0A_1M3JUPgZ2iuk0LLYtjA7xvqQ4bxx0jj4aVzS_NY2N8hSforhFr28luIL6tMBGhJ9qxAitZqxhUN8yNPXZC1VHaX_rG5uK7Pm2Q" 
+              <img
+                src="https://lh3.googleusercontent.com/aida/ADBb0ugrgReyL6jBC70aQ45n32o_AMNgiRsi-PXuyQF-CxPmbMmPmYqVXaIn_qB0DF3byAs6CgZyxH9Fpv9aGa1gEZZlPsvDcAoBKtfSyAvR-8mL2XfCVXen3Xk-3aGp9a5kaHngklo86-MniY1YZj9tmFTnulxcvYw23nClMiBK-0A_1M3JUPgZ2iuk0LLYtjA7xvqQ4bxx0jj4aVzS_NY2N8hSforhFr28luIL6tMBGhJ9qxAitZqxhUN8yNPXZC1VHaX_rG5uK7Pm2Q"
                 alt="Valeria"
                 className="w-full h-full object-cover grayscale opacity-80"
                 referrerPolicy="no-referrer"
@@ -513,8 +384,8 @@ const InvestigationMap = () => (
               <p className="text-gray-500">#Valeria #NetCity</p>
             </div>
             <div className="p-2 bg-gray-50 italic">
-               USUARIO: ANON_78S4 (CUENTA FANTASMA)
-             </div>
+              USUARIO: ANON_78S4 (CUENTA FANTASMA)
+            </div>
           </div>
           <div className="bg-gray-100 text-black w-4/5 text-[8px] -mt-2 border border-gray-400 shadow-xl">
             <div className="bg-gray-400 p-1">Email: Desconocido</div>
@@ -534,37 +405,37 @@ const InvestigationMap = () => (
         <div className="border border-cyber-orange/20 rounded-full w-[350px] h-[350px] absolute"></div>
         <div className="border border-cyber-orange/20 rounded-full w-[250px] h-[250px] absolute"></div>
         <div className="border border-cyber-orange/20 rounded-full w-[150px] h-[150px] absolute"></div>
-        
+
         {/* Nodes */}
         <div className="absolute top-[15%] left-1/2 -translate-x-1/2 flex flex-col items-center">
           <div className="w-10 h-10 border-2 border-cyber-orange bg-black flex items-center justify-center text-xl">💬</div>
-          <div className="text-[8px] text-center mt-1 uppercase font-bold">Capa 1:<br/>Injuria (Art. 220)</div>
+          <div className="text-[8px] text-center mt-1 uppercase font-bold">Capa 1:<br />Injuria (Art. 220)</div>
         </div>
-        
+
         <div className="absolute top-[30%] right-[20%] flex flex-col items-center">
           <div className="w-10 h-10 border-2 border-white bg-black flex items-center justify-center text-xl relative">
             <span>📢</span>
             <div className="absolute -top-6 text-[8px] bg-cyber-orange text-black px-1 font-bold">HERE</div>
           </div>
-          <div className="text-[8px] text-center mt-1 uppercase font-bold">Capa 2:<br/>Calumnia (Art. 221)</div>
+          <div className="text-[8px] text-center mt-1 uppercase font-bold">Capa 2:<br />Calumnia (Art. 221)</div>
         </div>
 
         <div className="absolute top-[40%] left-[20%] flex flex-col items-center">
           <div className="w-10 h-10 border-2 border-cyber-orange bg-black flex items-center justify-center text-xl">👤</div>
-          <div className="text-[8px] text-center mt-1 uppercase font-bold">Capa 3:<br/>Suplantación</div>
+          <div className="text-[8px] text-center mt-1 uppercase font-bold">Capa 3:<br />Suplantación</div>
         </div>
 
         <div className="w-16 h-16 border-2 border-cyber-orange bg-black flex items-center justify-center text-2xl relative z-10">
           <span>🤝</span>
-          <div className="absolute -bottom-10 text-[8px] text-center w-32 font-bold uppercase">Núcleo de<br/>la Verdad</div>
+          <div className="absolute -bottom-10 text-[8px] text-center w-32 font-bold uppercase">Núcleo de<br />la Verdad</div>
         </div>
       </div>
-      
+
       <div className="absolute left-10 top-1/2 -translate-y-1/2 text-[8px] opacity-60 text-center w-20 uppercase font-bold">
-        Zona de<br/>Chat Pública
+        Zona de<br />Chat Pública
       </div>
       <div className="absolute right-10 top-1/2 -translate-y-1/2 text-[8px] opacity-60 text-center w-20 uppercase font-bold">
-        Foros<br/>Centrales
+        Foros<br />Centrales
       </div>
     </section>
 
@@ -600,8 +471,8 @@ const TacticalBoard = () => (
         <h2 className="text-xl font-bold border-b-2 border-black mb-4 uppercase">Expediente: Valeria</h2>
         <div className="flex gap-3 mb-4">
           <div className="w-24 h-24 bg-gray-400 border-2 border-black overflow-hidden">
-            <img 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDvNr1VaAsLJLJg48Umt6hBYHfOghheGml4eLmXTOCrfMv_JLjp0_0tXBbiO-LEHK8Yunj8uDk4FpA2AUCRQSsOd-QsF8Qmby-Re5ojrFZVeIvemlYXKGYo_hBwmgv4ew99JXa-zok1NYCep8bcQgwowmYJdiUvU156mWamBgD0qQcjqEWywpmqadKA2Avwcvkdr6vfoVrATG8wUN5-Lxxs1ySmZ188BqBH33EaTtno26YV3cncL3_YYGnt1DVJFn6CknCJygyNc2Q" 
+            <img
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDvNr1VaAsLJLJg48Umt6hBYHfOghheGml4eLmXTOCrfMv_JLjp0_0tXBbiO-LEHK8Yunj8uDk4FpA2AUCRQSsOd-QsF8Qmby-Re5ojrFZVeIvemlYXKGYo_hBwmgv4ew99JXa-zok1NYCep8bcQgwowmYJdiUvU156mWamBgD0qQcjqEWywpmqadKA2Avwcvkdr6vfoVrATG8wUN5-Lxxs1ySmZ188BqBH33EaTtno26YV3cncL3_YYGnt1DVJFn6CknCJygyNc2Q"
               alt="Valeria"
               className="w-full h-full object-cover grayscale"
               referrerPolicy="no-referrer"
@@ -654,13 +525,13 @@ const TacticalBoard = () => (
 
         <div className="absolute top-10 left-10 w-32 h-40 bg-white border border-gray-400 p-2 shadow-lg -rotate-3 z-20">
           <div className="h-1 bg-red-800 mb-2"></div>
-          <p className="text-[7px] text-gray-800 leading-tight uppercase">Calumnia (Art. 222)<br/>Libertad del buen nombre mediante ofensas directas Denuncia</p>
+          <p className="text-[7px] text-gray-800 leading-tight uppercase">Calumnia (Art. 222)<br />Libertad del buen nombre mediante ofensas directas Denuncia</p>
           <div className="mt-4 border-2 border-red-500 text-center text-[10px] font-bold text-red-500 p-1">INJURIA</div>
         </div>
 
         <div className="absolute top-20 left-48 w-16 h-20 bg-white p-1 shadow-md z-20 border border-gray-300">
-          <img 
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDB_2S5DYrjA9ZYHAo6KMUF_yJPF0sAAMcsTSeMRgC3Awh_luQTL58EG2mD7lHvdQQugyaU3nHXcQN8AKhbWFU9Ps9OPSgNag8nHoERi-O9J6OGw-_fpNLnALbkk5YZqucnagnugsBKY5Ek64QN_Fkb719pgDqYJHtMuM7PVrLSk7JzzsLXB9GDzzrFG4on0oYYBCBYPFftl5wMkkITbJuOqpDfykqByuOby3ojAID9TaGAr-J3Zit9Y8ME4WWQu86AE1F2gvOnDIM" 
+          <img
+            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDB_2S5DYrjA9ZYHAo6KMUF_yJPF0sAAMcsTSeMRgC3Awh_luQTL58EG2mD7lHvdQQugyaU3nHXcQN8AKhbWFU9Ps9OPSgNag8nHoERi-O9J6OGw-_fpNLnALbkk5YZqucnagnugsBKY5Ek64QN_Fkb719pgDqYJHtMuM7PVrLSk7JzzsLXB9GDzzrFG4on0oYYBCBYPFftl5wMkkITbJuOqpDfykqByuOby3ojAID9TaGAr-J3Zit9Y8ME4WWQu86AE1F2gvOnDIM"
             alt="Suspect"
             className="w-full h-full object-cover grayscale"
             referrerPolicy="no-referrer"
@@ -669,7 +540,7 @@ const TacticalBoard = () => (
 
         <div className="absolute top-10 left-80 w-24 h-24 bg-black/80 border-2 border-cyber-orange flex flex-col items-center justify-center text-cyber-orange p-1 z-30">
           <div className="text-lg">💬</div>
-          <div className="text-[8px] text-center font-bold uppercase">ID: 001<br/>Injuria (Art. 220)</div>
+          <div className="text-[8px] text-center font-bold uppercase">ID: 001<br />Injuria (Art. 220)</div>
         </div>
 
         <div className="absolute top-44 left-10 bg-yellow-200 p-2 w-36 text-[9px] font-bold z-40 text-black shadow-md -rotate-1">
@@ -679,18 +550,18 @@ const TacticalBoard = () => (
         <div className="absolute bottom-4 left-4 right-4 bg-black/40 border border-white/20 p-2 flex items-center justify-around h-12 backdrop-blur-sm">
           <div className="text-[8px] text-white flex flex-col items-center">
             <div className="w-2 h-2 bg-cyber-orange mb-1"></div>
-             NetCity Central
-           </div>
+            NetCity Central
+          </div>
           <div className="w-20 h-px bg-white/40"></div>
           <div className="text-[8px] text-white flex flex-col items-center">
             <div className="w-2 h-2 bg-cyber-orange mb-1"></div>
-             Deep Net
-           </div>
+            Deep Net
+          </div>
           <div className="w-20 h-px bg-white/40"></div>
           <div className="text-[8px] text-white flex flex-col items-center">
             <div className="w-2 h-2 bg-cyber-orange mb-1"></div>
-             NetCity Central
-           </div>
+            NetCity Central
+          </div>
         </div>
       </div>
     </main>
@@ -725,27 +596,217 @@ const TacticalBoard = () => (
   </div>
 );
 
+// --- Level metadata ---
+
+const LEVEL_DESCRIPTIONS: Record<number, { name: string; icon: string; description: string }> = {
+  1: { name: 'LAS PRIMERAS SEÑALES',   icon: '💬', description: 'Mensajes ofensivos en redes sociales. Identifica los casos de Injuria (Art. 220).' },
+  2: { name: 'EL RUMOR VIRAL',         icon: '📢', description: 'Información falsa se difunde por la red escolar. Clasifica los casos de Calumnia (Art. 221).' },
+  3: { name: 'LA CUENTA FANTASMA',     icon: '👤', description: 'Alguien usurpa la identidad de Valeria en línea. Investiga la Suplantación (Ley 1273).' },
+  4: { name: 'ATAQUE COORDINADO',      icon: '⚠️', description: 'El acoso escala a amenazas directas y hostigamiento sistemático. Máxima presión.' },
+  5: { name: 'EL NÚCLEO DE LA VERDAD', icon: '🔍', description: 'Fase final. Identifica la red criminal detrás del ataque coordinado y emite el veredicto.' },
+};
+
+// --- Day Transition Modal ---
+
+const DayTransitionModal = ({ info, onContinue }: { info: DayTransitionInfo; onContinue: () => void }) => {
+  const [phase, setPhase] = useState<'summary' | 'level-unlock'>('summary');
+  const levelData = LEVEL_DESCRIPTIONS[info.nextLevel];
+
+  const handleContinue = () => {
+    if (phase === 'summary' && info.levelChanged) setPhase('level-unlock');
+    else onContinue();
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[300] flex items-center justify-center p-4"
+    >
+      <AnimatePresence mode="wait">
+        {phase === 'summary' ? (
+          <motion.div key="summary"
+            initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -30 }}
+            transition={{ duration: 0.3 }}
+            className="retro-border bg-black max-w-lg w-full p-8 space-y-5"
+          >
+            <div className="text-center space-y-1">
+              <p className="text-[10px] uppercase tracking-[0.3em] opacity-50">Informe de jornada</p>
+              <motion.h2 initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.1, type: 'spring', stiffness: 180 }}
+                className="text-5xl font-black font-vt323 text-cyber-orange"
+              >DÍA {info.completedDay} COMPLETADO</motion.h2>
+            </div>
+            <div className="h-px bg-cyber-orange/30" />
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between items-center opacity-70">
+                <span className="uppercase text-xs">Fondos anteriores</span>
+                <span className="font-vt323 text-xl">${info.moneyBefore}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="uppercase text-xs opacity-70">Renta + Comida</span>
+                <span className="font-vt323 text-xl text-red-400">− $150</span>
+              </div>
+              <div className="h-px bg-cyber-orange/20" />
+              <div className="flex justify-between items-center">
+                <span className="uppercase font-bold text-sm">Fondos actuales</span>
+                <motion.span initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.25, type: 'spring', stiffness: 200 }}
+                  className={cn('font-vt323 text-4xl font-bold',
+                    info.moneyAfter < 0 ? 'text-red-500' : info.moneyAfter < 150 ? 'text-yellow-400' : 'text-green-400')}
+                >${info.moneyAfter}</motion.span>
+              </div>
+              {info.isGameOverNext && (
+                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+                  className="text-red-500 text-xs font-bold uppercase text-center animate-pulse"
+                >⚠️ Fondos insuficientes — continuar cerrará el caso</motion.p>
+              )}
+            </div>
+            <div className="h-px bg-cyber-orange/30" />
+            <div className="space-y-2">
+              <p className="text-[10px] uppercase opacity-60 tracking-wider">Amonestaciones acumuladas</p>
+              <div className="flex gap-2 items-end">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <motion.span key={i} initial={{ scale: 0 }} animate={{ scale: 1 }}
+                    transition={{ delay: 0.05 * i + 0.3 }}
+                    className={cn('font-vt323 text-2xl', i < info.amonestations ? 'text-red-500' : 'text-cyber-orange/25')}
+                  >{i < info.amonestations ? '[✗]' : '[ ]'}</motion.span>
+                ))}
+                <span className="text-xs opacity-50 ml-1">{info.amonestations}/5</span>
+              </div>
+            </div>
+            {info.levelChanged && (
+              <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.5 }}
+                className="border border-cyber-orange bg-cyber-orange/10 p-3 text-center space-y-1"
+              >
+                <p className="text-[10px] uppercase opacity-60 tracking-wider">Nueva fase desbloqueada</p>
+                <p className="font-bold text-cyber-orange uppercase text-sm">
+                  {levelData?.icon} NIVEL {info.nextLevel} — {levelData?.name}
+                </p>
+              </motion.div>
+            )}
+            <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+              onClick={handleContinue} className="btn-primary w-full text-base"
+            >{info.levelChanged ? 'VER NUEVO NIVEL →' : 'CONTINUAR →'}</motion.button>
+          </motion.div>
+        ) : (
+          <motion.div key="level-unlock"
+            initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.1 }} transition={{ duration: 0.35 }}
+            className="retro-border bg-black max-w-lg w-full p-10 text-center space-y-6"
+          >
+            <motion.p initial={{ opacity: 0, y: -15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+              className="text-[10px] uppercase tracking-[0.4em] opacity-50"
+            >— Nueva fase desbloqueada —</motion.p>
+            <motion.div initial={{ scale: 0, rotate: -15 }} animate={{ scale: 1, rotate: 0 }}
+              transition={{ delay: 0.15, type: 'spring', stiffness: 140, damping: 10 }}
+              className="text-8xl select-none"
+            >{levelData?.icon}</motion.div>
+            <div className="space-y-2">
+              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
+                className="font-vt323 text-2xl text-cyber-orange/60"
+              >NIVEL {info.nextLevel}</motion.p>
+              <motion.h2 initial={{ letterSpacing: '0.6em', opacity: 0 }} animate={{ letterSpacing: '0.08em', opacity: 1 }}
+                transition={{ delay: 0.4, duration: 0.55 }}
+                className="text-3xl font-black uppercase text-cyber-orange"
+              >{levelData?.name}</motion.h2>
+            </div>
+            <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}
+              className="border border-cyber-orange/30 p-4 text-sm text-cyber-orange/80 leading-relaxed"
+            >{levelData?.description}</motion.div>
+            <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.85 }}
+              onClick={handleContinue} className="btn-primary w-full text-base"
+            >COMENZAR NIVEL {info.nextLevel} →</motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};
+
+// --- Helpers ---
+
+const getTreeDepth = (node: GameNode | null): number => {
+  if (!node) return 0;
+  return 1 + Math.max(getTreeDepth(node.left), getTreeDepth(node.right));
+};
+
 // --- Main App ---
 
 export default function App() {
-  const { 
-    state, 
-    message, 
-    setPlayerName, 
-    selectEvidence, 
-    classifyCrime, 
-    endDay, 
-    acceptBribe, 
-    submitFinalVerdict, 
-    saveGame, 
+  const {
+    state,
+    message,
+    dayTransitionInfo,
+    avlRotationFlag,
+    setPlayerName,
+    selectEvidence,
+    classifyCrime,
+    startDayTransition,
+    confirmEndDay,
+    acceptBribe,
+    submitFinalVerdict,
+    saveGame,
     loadGame,
-    resetGame 
+    resetGame
   } = useGameState();
-  
+
   const [screen, setScreen] = useState<Screen>('boot');
   const [selectedCrime, setSelectedCrime] = useState<CrimeType>('None');
   const [showHelp, setShowHelp] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [showAvlFlash, setShowAvlFlash] = useState(false);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const buttonAudioRef = React.useRef<HTMLAudioElement | null>(null);
+  const avlFlashTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMutedRef = React.useRef(isMuted);
+
+  const handleConfirmEndDay = () => { confirmEndDay(); setSelectedCrime('None'); };
+
+  // Keep isMutedRef in sync so event listeners always see the latest value
+  useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+
+  // Background music — starts on first user interaction (browser autoplay policy)
+  useEffect(() => {
+    const audio = new Audio('/Sonido de fondo.mp3');
+    audio.loop = true;
+    audio.volume = 0.25;
+    audioRef.current = audio;
+    const start = () => { audio.play().catch(() => {}); window.removeEventListener('click', start); window.removeEventListener('keydown', start); };
+    window.addEventListener('click', start);
+    window.addEventListener('keydown', start);
+    return () => { audio.pause(); window.removeEventListener('click', start); window.removeEventListener('keydown', start); };
+  }, []);
+
+  useEffect(() => { if (audioRef.current) audioRef.current.muted = isMuted; }, [isMuted]);
+
+  // Preload button sound
+  useEffect(() => {
+    buttonAudioRef.current = new Audio('/Botones.mp3');
+    buttonAudioRef.current.volume = 0.45;
+  }, []);
+
+  // Global button click sound — covers every <button> in the app without touching each one
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (isMutedRef.current) return;
+      const target = e.target as HTMLElement;
+      if (target.closest('button')) {
+        const audio = buttonAudioRef.current;
+        if (audio) { audio.currentTime = 0; audio.play().catch(() => {}); }
+      }
+    };
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
+
+  // AVL rotation flash — fires whenever avlRotationFlag increments
+  useEffect(() => {
+    if (avlRotationFlag === 0) return;
+    if (avlFlashTimer.current) clearTimeout(avlFlashTimer.current);
+    setShowAvlFlash(true);
+    avlFlashTimer.current = setTimeout(() => setShowAvlFlash(false), 2000);
+  }, [avlRotationFlag]);
 
   useEffect(() => {
     if (state.isGameOver) setScreen('game-over');
@@ -771,46 +832,38 @@ export default function App() {
     }
   };
 
-  const renderTreeNode = (node: any, x: number, y: number, level: number) => {
+  const renderTreeNode = (node: GameNode | null, x: number, y: number, level: number): React.ReactNode => {
     if (!node) return null;
     const offset = 120 / (level + 1);
     return (
       <React.Fragment key={node.id}>
         {/* Lines to children */}
         {node.left && (
-          <line 
-            x1={x} y1={y} x2={x - offset} y2={y + 60} 
-            stroke="#f69322" strokeWidth="1" strokeDasharray="2,2" opacity="0.5"
-          />
+          <line x1={x} y1={y} x2={x - offset} y2={y + 60}
+            stroke="#f69322" strokeWidth="1" strokeDasharray="2,2" opacity="0.5" />
         )}
         {node.right && (
-          <line 
-            x1={x} y1={y} x2={x + offset} y2={y + 60} 
-            stroke="#f69322" strokeWidth="1" strokeDasharray="2,2" opacity="0.5"
-          />
+          <line x1={x} y1={y} x2={x + offset} y2={y + 60}
+            stroke="#f69322" strokeWidth="1" strokeDasharray="2,2" opacity="0.5" />
         )}
-        
-        {/* Node */}
+
+        {/* Node — outer g positions; inner motion.g animates entry */}
         <g transform={`translate(${x - 20}, ${y - 20})`}>
-          <rect 
-            width="40" height="40" 
-            className="fill-black stroke-cyber-orange stroke-2"
-            filter="drop-shadow(0 0 5px rgba(246,147,34,0.5))"
-          />
-          <text 
-            x="20" y="25" 
-            textAnchor="middle" 
-            className="fill-cyber-orange text-[10px] font-bold font-vt323"
+          <motion.g
+            key={node.id}
+            initial={{ scale: 0, opacity: 0, filter: 'drop-shadow(0 0 16px rgba(246,147,34,1))' }}
+            animate={{ scale: 1, opacity: 1, filter: 'drop-shadow(0 0 5px rgba(246,147,34,0.55))' }}
+            transition={{ type: 'spring', stiffness: 260, damping: 18 }}
+            style={{ transformBox: 'fill-box', transformOrigin: '20px 20px' }}
           >
-            {node.gravity}
-          </text>
-          <text 
-            x="20" y="50" 
-            textAnchor="middle" 
-            className="fill-cyber-orange text-[6px] uppercase"
-          >
-            {node.crimeType.substring(0, 8)}
-          </text>
+            <rect width="40" height="40" fill="black" stroke="#f69322" strokeWidth="2" />
+            <text x="20" y="20" textAnchor="middle" fill="#f69322" fontSize="13" fontWeight="bold" fontFamily="VT323, monospace">
+              {node.gravity}
+            </text>
+            <text x="20" y="34" textAnchor="middle" fill="#f69322" fontSize="6" fontFamily="monospace">
+              {node.crimeType.substring(0, 8).toUpperCase()}
+            </text>
+          </motion.g>
         </g>
 
         {renderTreeNode(node.left, x - offset, y + 60, level + 1)}
@@ -822,13 +875,14 @@ export default function App() {
   return (
     <div className="h-screen w-screen flex flex-col p-2 crt-effect relative">
       <div className="scanline" />
-      
+
       {screen !== 'boot' && screen !== 'intro' && (
-        <Header 
-          title={getScreenTitle()} 
+        <Header
+          title={getScreenTitle()}
           screen={screen}
           day={state.day}
           level={state.level}
+          onNavigate={setScreen}
         />
       )}
 
@@ -845,7 +899,7 @@ export default function App() {
             {screen === 'boot' && <BootScreen onComplete={() => setScreen('intro')} />}
             {screen === 'intro' && <IntroScreen onComplete={(name) => { setPlayerName(name); setScreen('main-menu'); }} />}
             {screen === 'main-menu' && <MainMenu onNavigate={setScreen} setShowHelp={setShowHelp} setShowSettings={setShowSettings} loadGame={loadGame} />}
-            
+
             {screen === 'case-tree' && (
               <div className="flex-1 flex space-x-2 overflow-hidden py-2 h-full">
                 {/* Panel Izquierdo: Dossier & Evidencias */}
@@ -876,9 +930,9 @@ export default function App() {
                   </div>
                   <div className="retro-border flex-1 flex flex-col bg-black overflow-hidden">
                     <div className="panel-header">Evidencias Pendientes ({state.evidenceCollected.length})</div>
-                    <div className="p-2 overflow-y-auto space-y-2">
+                    <div className="p-2 overflow-y-auto flex-1 space-y-2 cyber-scroll">
                       {state.evidenceCollected.map(ev => (
-                        <button 
+                        <button
                           key={ev.id}
                           onClick={() => selectEvidence(ev)}
                           className={cn(
@@ -900,18 +954,41 @@ export default function App() {
                 {/* Panel Central: Árbol */}
                 <section className="flex-1 flex flex-col space-y-2">
                   <div className="retro-border flex-1 flex flex-col bg-black grid-bg relative overflow-hidden">
-                    <div className="panel-header">Árbol de la Verdad (AVL)</div>
-                    <div className="flex-1 p-4 relative overflow-auto">
-                       <svg className="w-full h-full min-h-[400px]">
+                    <div className="panel-header">
+                      Árbol de la Verdad (AVL)
+                      <span className="text-[10px] font-normal opacity-60">
+                        {state.tree ? `${getTreeDepth(state.tree)} niveles` : 'vacío'}
+                      </span>
+                    </div>
+                    <div className="flex-1 p-4 relative overflow-auto cyber-scroll">
+                      {/* SVG height grows with tree depth */}
+                      <svg
+                        className="w-full"
+                        style={{ minHeight: `${Math.max(400, getTreeDepth(state.tree) * 80 + 80)}px` }}
+                      >
                         <g transform="translate(0, 40)">
                           {state.tree ? renderTreeNode(state.tree, 300, 40, 0) : (
-                            <text x="50%" y="50%" textAnchor="middle" className="fill-cyber-orange/30 text-xs uppercase font-vt323">
+                            <text x="50%" y="50%" textAnchor="middle" fill="rgba(246,147,34,0.3)" fontSize="12" fontFamily="VT323, monospace">
                               Esperando inserción de nodos...
                             </text>
                           )}
                         </g>
                       </svg>
                     </div>
+                    {/* AVL rotation flash */}
+                    <AnimatePresence>
+                      {showAvlFlash && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.8, y: -10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.8, y: -10 }}
+                          transition={{ duration: 0.2 }}
+                          className="absolute top-10 left-1/2 -translate-x-1/2 bg-yellow-400/20 border border-yellow-400 px-5 py-2 text-yellow-300 font-bold text-sm uppercase tracking-widest z-20 pointer-events-none"
+                        >
+                          ⚡ ROTACIÓN AVL
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                     {state.level === 4 && (
                       <div className="absolute top-10 right-4 w-48 bg-red-900/80 border border-red-500 p-2 text-[10px] animate-pulse">
                         <p className="font-bold uppercase mb-1">⚠️ LLAMADA ENTRANTE</p>
@@ -927,7 +1004,7 @@ export default function App() {
                         <FileText size={16} />
                         <span>GUARDAR</span>
                       </button>
-                      <button onClick={endDay} className="btn-action h-full flex flex-col items-center justify-center">
+                      <button onClick={startDayTransition} className="btn-action h-full flex flex-col items-center justify-center">
                         <Coffee size={16} />
                         <span>TERMINAR DÍA</span>
                       </button>
@@ -943,7 +1020,7 @@ export default function App() {
                 <section className="w-1/3 flex flex-col space-y-2">
                   <div className="retro-border flex-1 flex flex-col bg-black overflow-hidden">
                     <div className="panel-header">Clasificación de Delito</div>
-                    <div className="p-4 flex-1 flex flex-col gap-4 bg-[#0a0a0a]">
+                    <div className="p-4 flex-1 min-h-0 flex flex-col gap-4 bg-[#0a0a0a]">
                       {state.currentEvidence ? (
                         <>
                           <div className="bg-cyber-orange/10 border border-cyber-orange p-3">
@@ -951,9 +1028,9 @@ export default function App() {
                             <p className="text-sm font-bold">"{state.currentEvidence.content}"</p>
                             <p className="text-[10px] mt-2 italic">Detalle: {state.currentEvidence.details}</p>
                           </div>
-                          <div className="flex-1 space-y-2 overflow-y-auto pr-1">
+                          <div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1 cyber-scroll">
                             {(Object.keys(CRIME_INFO) as CrimeType[]).map(crime => (
-                              <button 
+                              <button
                                 key={crime}
                                 onClick={() => setSelectedCrime(crime)}
                                 className={cn(
@@ -992,11 +1069,11 @@ export default function App() {
                   </div>
                   {state.level === 5 && (
                     <div className="retro-border h-32 bg-black p-4 flex flex-col gap-2">
-                       <p className="text-[10px] font-bold uppercase text-red-500">VERDICTO FINAL: ¿Es culpable el sospechoso principal?</p>
-                       <div className="flex gap-2">
-                         <button onClick={() => submitFinalVerdict(true)} className="flex-1 bg-green-900 border border-green-500 text-green-500 py-2 hover:bg-green-500 hover:text-black">CULPABLE</button>
-                         <button onClick={() => submitFinalVerdict(false)} className="flex-1 bg-red-900 border border-red-500 text-red-500 py-2 hover:bg-red-500 hover:text-black">INOCENTE</button>
-                       </div>
+                      <p className="text-[10px] font-bold uppercase text-red-500">VERDICTO FINAL: ¿Es culpable el sospechoso principal?</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => submitFinalVerdict(true)} className="flex-1 bg-green-900 border border-green-500 text-green-500 py-2 hover:bg-green-500 hover:text-black">CULPABLE</button>
+                        <button onClick={() => submitFinalVerdict(false)} className="flex-1 bg-red-900 border border-red-500 text-red-500 py-2 hover:bg-red-500 hover:text-black">INOCENTE</button>
+                      </div>
                     </div>
                   )}
                 </section>
@@ -1011,8 +1088,8 @@ export default function App() {
       </main>
 
       {screen !== 'boot' && screen !== 'intro' && screen !== 'game-over' && (
-        <Footer 
-          message={message} 
+        <Footer
+          message={message}
           amonestations={state.amonestations}
           money={state.money}
         />
@@ -1021,7 +1098,7 @@ export default function App() {
       {/* Modals */}
       <AnimatePresence>
         {showHelp && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
           >
@@ -1054,7 +1131,7 @@ export default function App() {
         )}
 
         {showSettings && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
           >
@@ -1088,6 +1165,22 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Day Transition Modal */}
+      <AnimatePresence>
+        {dayTransitionInfo && (
+          <DayTransitionModal info={dayTransitionInfo} onContinue={handleConfirmEndDay} />
+        )}
+      </AnimatePresence>
+
+      {/* Mute button */}
+      <button
+        onClick={() => setIsMuted(m => !m)}
+        title={isMuted ? 'Activar música' : 'Silenciar música'}
+        className="fixed bottom-2 left-2 z-[100] bg-black/80 border border-cyber-orange p-1.5 text-cyber-orange hover:bg-cyber-orange hover:text-black transition-all"
+      >
+        {isMuted ? '🔇' : '🔊'}
+      </button>
 
       {/* Navigation Shortcuts (for demo purposes) */}
       <div className="fixed bottom-2 right-2 flex flex-col items-end gap-1 z-[100] group">

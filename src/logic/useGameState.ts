@@ -1,7 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { GameState, Evidence, GameNode, CrimeType } from '../types/game';
 import { generateEvidence } from './gameEngine';
 import { AVLTree } from './avlTree';
+
+export interface DayTransitionInfo {
+  completedDay: number;
+  moneyBefore: number;
+  moneyAfter: number;
+  moneyDelta: number;
+  amonestations: number;
+  prevLevel: number;
+  nextLevel: number;
+  levelChanged: boolean;
+  isGameOverNext: boolean;
+  gameOverReason: string;
+  isFinalDay: boolean;
+}
 
 const INITIAL_STATE: GameState = {
   playerName: '',
@@ -21,12 +35,19 @@ const INITIAL_STATE: GameState = {
 export function useGameState() {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
   const [message, setMessage] = useState<string>('');
+  const [dayTransitionInfo, setDayTransitionInfo] = useState<DayTransitionInfo | null>(null);
+  const [avlRotationFlag, setAvlRotationFlag] = useState(0);
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-generate evidence periodically or on level start
+  const setTimedMessage = useCallback((msg: string) => {
+    if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+    setMessage(msg);
+    messageTimerRef.current = setTimeout(() => setMessage(''), 5000);
+  }, []);
+
+  // Auto-generate evidence when the queue is empty (on new day or after classifying all)
   useEffect(() => {
     if (state.isGameOver) return;
-    
-    // Initial evidence for the day
     if (state.evidenceCollected.length === 0) {
       const newEvidence = generateEvidence(state.level);
       setState(prev => ({
@@ -35,7 +56,7 @@ export function useGameState() {
         currentEvidence: newEvidence
       }));
     }
-  }, [state.day, state.level, state.isGameOver]);
+  }, [state.day, state.level, state.isGameOver, state.evidenceCollected.length]);
 
   const setPlayerName = (name: string) => {
     setState(prev => ({ ...prev, playerName: name }));
@@ -50,8 +71,8 @@ export function useGameState() {
     if (!evidence) return;
 
     if (selectedCrime === evidence.correctCrime) {
-      // Success
       const newNodeId = Math.random().toString(36).substr(2, 5);
+      AVLTree.rotationCount = 0;
       const newTree = AVLTree.insert(
         state.tree,
         newNodeId,
@@ -59,7 +80,7 @@ export function useGameState() {
         selectedCrime,
         evidence.gravity
       );
-      
+      if (AVLTree.rotationCount > 0) setAvlRotationFlag(f => f + 1);
       setState(prev => ({
         ...prev,
         tree: newTree,
@@ -67,12 +88,10 @@ export function useGameState() {
         evidenceCollected: prev.evidenceCollected.filter(e => e.id !== evidenceId),
         currentEvidence: null
       }));
-      setMessage(`¡Correcto! El caso ha sido insertado en el Árbol de la Verdad.`);
+      setTimedMessage(`¡Correcto! El caso ha sido insertado en el Árbol de la Verdad.`);
     } else {
-      // Failure
       const newAmonestations = state.amonestations + 1;
       const newMoney = state.money - 50;
-      
       if (newAmonestations >= 5) {
         setState(prev => ({
           ...prev,
@@ -86,53 +105,78 @@ export function useGameState() {
           amonestations: newAmonestations,
           money: newMoney
         }));
-        setMessage(`Error de clasificación. Amonestación recibida. Multa: $50.`);
+        setTimedMessage(`Error de clasificación. Amonestación recibida. Multa: $50.`);
       }
     }
   };
 
-  const endDay = () => {
-    const rent = 100;
-    const food = 50;
-    const totalCost = rent + food;
-    
-    setState(prev => {
-      const nextMoney = prev.money - totalCost;
-      const nextDay = prev.day + 1;
-      const nextLevel = Math.ceil(nextDay / 2);
-      
-      if (nextMoney < 0) {
-        return {
-          ...prev,
-          money: nextMoney,
-          isGameOver: true,
-          gameOverReason: 'Desalojado por insolvencia económica. No pudiste pagar la renta.'
-        };
-      }
+  // Calculates what will happen at end of day and opens the transition modal.
+  // Does NOT apply any state changes yet.
+  const startDayTransition = () => {
+    const totalCost = 150;
+    const moneyAfter = state.money - totalCost;
+    const nextDay = state.day + 1;
+    const isFinalDay = nextDay > 10;
+    const nextLevel = isFinalDay ? state.level : Math.min(5, Math.ceil(nextDay / 2));
+    const levelChanged = !isFinalDay && nextLevel !== state.level;
+    const isGameOverNext = moneyAfter < 0;
 
-      if (nextDay > 10) {
-        return { ...prev, day: 10 }; // Final verdict phase
-      }
-
-      // Chance of bribe starting at level 4
-      let bribeAvailable = false;
-      if (nextLevel >= 4 && Math.random() > 0.7) {
-        bribeAvailable = true;
-      }
-
-      return {
-        ...prev,
-        money: nextMoney,
-        day: nextDay,
-        level: nextLevel,
-        evidenceCollected: [generateEvidence(nextLevel), generateEvidence(nextLevel)], // 2 evidences per day
-        hasAcceptedBribe: bribeAvailable ? prev.hasAcceptedBribe : prev.hasAcceptedBribe // Reset or keep? Let's keep it.
-      };
+    setDayTransitionInfo({
+      completedDay: state.day,
+      moneyBefore: state.money,
+      moneyAfter,
+      moneyDelta: -totalCost,
+      amonestations: state.amonestations,
+      prevLevel: state.level,
+      nextLevel,
+      levelChanged,
+      isGameOverNext,
+      gameOverReason: isGameOverNext
+        ? 'Desalojado por insolvencia económica. No pudiste pagar la renta.'
+        : '',
+      isFinalDay,
     });
+  };
 
-    if (state.level >= 4 && Math.random() > 0.7) {
-       setMessage('⚠️ ALERTA: Has recibido un mensaje encriptado. Alguien ofrece $500 por "perder" una evidencia clave.');
+  // Applies the end-of-day state changes after the player dismisses the modal.
+  const confirmEndDay = () => {
+    if (!dayTransitionInfo) return;
+
+    if (dayTransitionInfo.isGameOverNext) {
+      setState(prev => ({
+        ...prev,
+        money: dayTransitionInfo.moneyAfter,
+        isGameOver: true,
+        gameOverReason: dayTransitionInfo.gameOverReason,
+      }));
+      setDayTransitionInfo(null);
+      return;
     }
+
+    if (dayTransitionInfo.isFinalDay) {
+      setState(prev => ({ ...prev, day: 10 }));
+      setDayTransitionInfo(null);
+      return;
+    }
+
+    const newEvidences = [
+      generateEvidence(dayTransitionInfo.nextLevel),
+      generateEvidence(dayTransitionInfo.nextLevel),
+    ];
+    setState(prev => ({
+      ...prev,
+      money: dayTransitionInfo.moneyAfter,
+      day: dayTransitionInfo.completedDay + 1,
+      level: dayTransitionInfo.nextLevel,
+      evidenceCollected: newEvidences,
+      currentEvidence: newEvidences[0],
+    }));
+
+    if (dayTransitionInfo.nextLevel >= 4 && Math.random() > 0.7) {
+      setTimedMessage('⚠️ ALERTA: Has recibido un mensaje encriptado. Alguien ofrece $500 por "perder" una evidencia clave.');
+    }
+
+    setDayTransitionInfo(null);
   };
 
   const acceptBribe = (amount: number) => {
@@ -142,11 +186,10 @@ export function useGameState() {
       integrity: prev.integrity - 30,
       hasAcceptedBribe: true
     }));
-    setMessage('Has aceptado el soborno. Tu cuenta tiene más fondos, pero tu integridad ha caído.');
+    setTimedMessage('Has aceptado el soborno. Tu cuenta tiene más fondos, pero tu integridad ha caído.');
   };
 
   const submitFinalVerdict = (isGuilty: boolean) => {
-    // In this simplified logic, the "truth" is always that the root cause was a coordinated attack
     if (isGuilty) {
       if (state.hasAcceptedBribe) {
         setState(prev => ({
@@ -173,6 +216,7 @@ export function useGameState() {
   const resetGame = () => {
     setState(INITIAL_STATE);
     setMessage('');
+    setDayTransitionInfo(null);
   };
 
   const saveGame = useCallback(async () => {
@@ -182,11 +226,16 @@ export function useGameState() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(state)
       });
-      if (response.ok) setMessage('Progreso guardado en la terminal central.');
+      if (response.ok) {
+        setTimedMessage('Progreso guardado en la terminal central.');
+      } else {
+        setTimedMessage('Error al guardar: el servidor rechazó la solicitud.');
+      }
     } catch (error) {
       console.error('Error saving game:', error);
+      setTimedMessage('Error de conexión: no se pudo guardar el progreso.');
     }
-  }, [state]);
+  }, [state, setTimedMessage]);
 
   const loadGame = useCallback(async () => {
     try {
@@ -194,30 +243,34 @@ export function useGameState() {
       const data = await response.json();
       if (data && !data.error) {
         setState(data);
-        setMessage('Expediente cargado con éxito.');
+        setTimedMessage('Expediente cargado con éxito.');
         return true;
       } else {
-        setMessage('No se encontró ningún expediente guardado.');
+        setTimedMessage('No se encontró ningún expediente guardado.');
         return false;
       }
     } catch (error) {
       console.error('Error loading game:', error);
+      setTimedMessage('Error de conexión: no se pudo cargar el expediente.');
       return false;
     }
-  }, []);
+  }, [setTimedMessage]);
 
   return {
     state,
     message,
+    dayTransitionInfo,
+    avlRotationFlag,
     setPlayerName,
     selectEvidence,
     classifyCrime,
-    endDay,
+    startDayTransition,
+    confirmEndDay,
     acceptBribe,
     submitFinalVerdict,
     resetGame,
     saveGame,
     loadGame,
-    setMessage
+    setMessage: setTimedMessage
   };
 }

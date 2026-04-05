@@ -1,6 +1,9 @@
 import { GameNode, CrimeType } from '../types/game';
 
 export class AVLTree {
+  /** Incremented every time a rotation executes. Reset externally before each insert to detect rotations. */
+  static rotationCount = 0;
+
   static getHeight(node: GameNode | null): number {
     return node ? node.height : 0;
   }
@@ -14,6 +17,7 @@ export class AVLTree {
   }
 
   static rotateRight(y: GameNode): GameNode {
+    this.rotationCount++;
     const x = y.left!;
     const T2 = x.right;
 
@@ -27,6 +31,7 @@ export class AVLTree {
   }
 
   static rotateLeft(x: GameNode): GameNode {
+    this.rotationCount++;
     const y = x.right!;
     const T2 = y.left;
 
