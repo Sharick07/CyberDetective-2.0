@@ -23,17 +23,25 @@ export interface GameNode {
 
 export interface GameState {
   playerName: string;
-  day: number;
-  level: number;
+  day: number;               // 1-10
+  level: number;             // 1-5
   money: number;
-  integrity: number; // 0-100
-  amonestations: number;
-  evidenceCollected: Evidence[];
+  integrity: number;         // 0-100
+  amonestations: number;     // 0-5
+  evidenceCollected: Evidence[];          // pending this day
+  processedEvidenceIds: string[];         // all correctly classified IDs (never repeat)
   tree: GameNode | null;
   currentEvidence: Evidence | null;
   isGameOver: boolean;
   gameOverReason: string;
+  gameOverType: 'insolvencia' | 'incompetencia' | 'veredicto' | 'corrupcion' | 'victoria' | '';
   hasAcceptedBribe: boolean;
+  bribeCount: number;                     // how many times bribe was offered (max 2)
+  pendingBribeOffer: number | null;       // active bribe amount, null = no offer
+  timeRemaining: number;                  // seconds, starts at 600
+  timerActive: boolean;
+  dayEarnings: number;                    // earnings this day (reset each day)
+  totalNodesInserted: number;             // total nodes in the tree
 }
 
 export const CRIME_INFO: Record<CrimeType, { article: string; description: string; requirements: string[] }> = {

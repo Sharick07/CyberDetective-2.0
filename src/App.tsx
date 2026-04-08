@@ -105,63 +105,90 @@ const BOOT_SEQUENCE = [
   "INICIANDO TERMINAL SECURE-OS...",
   "CARGANDO MÓDULO DE ACCESIBILIDAD...",
   "CONEXIÓN ESTABLECIDA CON: NETCITY CENTRAL.",
-  "SISTEMA: Bienvenido a NetCity. En nuestra ciudad digital, la conexión lo es todo. Foros, redes sociales, mensajería instantánea... los estudiantes viven en línea. Pero en los últimos meses, la red se ha oscurecido. Las alertas por casos de ciberacoso y bullying han saturado nuestros servidores. Lo que pasa en la pantalla, está destruyendo vidas en el mundo real.",
-  "PRESIONE [ENTER] PARA CONTINUAR"
+  "SISTEMA: Bienvenido a NetCity. En nuestra ciudad digital, la conexión lo es todo. Foros, redes sociales, mensajería instantánea... los estudiantes viven en línea. Pero en los últimos meses, la red se ha oscurecido. Las alertas por casos de ciberacoso y bullying han saturado nuestros servidores. Lo que pasa en la pantalla, está destruyendo vidas en el mundo real."
 ];
 
 const BootScreen = ({ onComplete }: { onComplete: () => void }) => {
-  const [lines, setLines] = useState<string[]>([]);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [displayedText, setDisplayedText] = useState('');
+  const fullText = BOOT_SEQUENCE.join('\n');
   const typingAudioRef = React.useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    typingAudioRef.current = new Audio('/Texto escribiendose.mp3');
-    typingAudioRef.current.volume = 0.5;
+    if (!hasStarted) return;
+
+    const audio = new Audio('/Texto escribiendose.mp3');
+    audio.loop = true;
+    audio.volume = 0.7; // Aumentar un poco el volumen del tecleo
+    typingAudioRef.current = audio;
+
+    // Empezar a reproducir el audio continuo de tecleo
+    audio.play().catch(e => console.error("Audio typing block:", e));
+
     let i = 0;
     const interval = setInterval(() => {
-      if (i < BOOT_SEQUENCE.length) {
-        setLines(prev => [...prev, BOOT_SEQUENCE[i]]);
-        if (typingAudioRef.current) {
-          typingAudioRef.current.currentTime = 0;
-          typingAudioRef.current.play().catch(() => {});
-        }
+      if (i < fullText.length) {
+        const char = fullText.charAt(i);
+        setDisplayedText(prev => prev + char);
         i++;
       } else {
         clearInterval(interval);
+        // Pausar el audio cuando termine de escribir
+        if (typingAudioRef.current) {
+          typingAudioRef.current.pause();
+        }
       }
-    }, 800);
+    }, 25); // Faster typing to keep it dynamic
+
     return () => {
       clearInterval(interval);
-      typingAudioRef.current?.pause();
+      if (typingAudioRef.current) {
+        typingAudioRef.current.pause();
+      }
     };
-  }, []);
+  }, [fullText, hasStarted]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && lines.length >= BOOT_SEQUENCE.length) onComplete();
+      if (e.key === 'Enter') {
+        if (!hasStarted) setHasStarted(true);
+        else if (displayedText.length === fullText.length) onComplete();
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [lines, onComplete]);
+  }, [displayedText.length, fullText.length, hasStarted, onComplete]);
+
+  if (!hasStarted) {
+    return (
+      <div 
+        className="h-full flex items-center justify-center p-12 font-mono text-amber-500 bg-black cursor-pointer hover:bg-white/5 transition-colors duration-300"
+        onClick={() => setHasStarted(true)}
+      >
+        <div className="animate-pulse border-2 border-amber-500 px-8 py-4 text-2xl tracking-widest font-bold">
+          [ INICIAR SISTEMA ]
+        </div>
+      </div>
+    );
+  }
+
+  const paragraphs = displayedText.split('\n');
 
   return (
     <div className="h-full flex flex-col items-start justify-center p-12 font-mono text-amber-500 bg-black">
-      <div className="space-y-2">
-        {lines.map((line, i) => (
-          <motion.p
-            key={i}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            className={cn("text-lg", i === lines.length - 1 && "animate-pulse")}
-          >
+      <div className="space-y-4 max-w-4xl">
+        {paragraphs.map((line, i) => (
+          <p key={i} className="text-xl leading-relaxed">
             {line}
-          </motion.p>
+            {i === paragraphs.length - 1 && displayedText.length < fullText.length && <span className="animate-pulse">_</span>}
+          </p>
         ))}
-        {lines.length >= BOOT_SEQUENCE.length && (
+        {displayedText.length === fullText.length && (
           <button
             onClick={onComplete}
-            className="mt-4 border border-amber-500 px-4 py-1 text-sm hover:bg-amber-500 hover:text-black transition-all"
+            className="mt-8 border-2 border-amber-500 px-8 py-3 text-xl tracking-widest font-bold hover:bg-amber-500 hover:text-black transition-all animate-pulse"
           >
-            [ PRESIONAR ENTER O CLICK AQUÍ ]
+            Siguiente
           </button>
         )}
       </div>
@@ -226,111 +253,131 @@ const GameOverScreen = ({ reason, onRestart }: { reason: string; onRestart: () =
 
 // --- Screens ---
 
-const MainMenu = ({ onNavigate, setShowHelp, setShowSettings, loadGame }: { onNavigate: (s: Screen) => void; setShowHelp: (v: boolean) => void; setShowSettings: (v: boolean) => void; loadGame: () => Promise<boolean> }) => {
+const DETECTIVE_AVATARS = [
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Felix&clothing=blazerAndShirt&mouth=smile&accessories=sunglasses",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Jack&clothing=blazerAndSweater&mouth=smile",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Oliver&clothing=blazerAndShirt&mouth=smile&accessories=prescription02",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Mia&clothing=blazerAndShirt&mouth=smile&accessories=sunglasses",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Sophia&clothing=blazerAndSweater&mouth=smile&accessories=prescription01",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Lily&clothing=blazerAndShirt&mouth=smile"
+];
+
+const MainMenu = ({ onNavigate, setShowHelp, setShowSettings, loadGame, playerName }: { onNavigate: (s: Screen) => void; setShowHelp: (v: boolean) => void; setShowSettings: (v: boolean) => void; loadGame: () => Promise<boolean>; playerName: string; }) => {
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [avatarIdx, setAvatarIdx] = useState(0);
+
+  const nextAvatar = () => setAvatarIdx((prev) => (prev + 1) % DETECTIVE_AVATARS.length);
+  const prevAvatar = () => setAvatarIdx((prev) => (prev - 1 + DETECTIVE_AVATARS.length) % DETECTIVE_AVATARS.length);
+
   const handleLoad = async () => {
     const success = await loadGame();
     if (success) onNavigate('case-tree');
   };
 
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  const handleClose = () => {
+    try {
+      window.close();
+    } catch(e) {}
+    onNavigate('boot');
+  };
+
+  if (isMinimized) {
+    return (
+      <div className="flex-1 flex flex-col justify-end items-start h-full p-4">
+        <div className="retro-border px-4 py-3 bg-black text-cyber-orange flex items-center justify-between w-72 shadow-lg shadow-cyber-orange/20">
+          <span className="text-xs font-bold uppercase truncate tracking-wider">CyberDetective (Min.)</span>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => setIsMinimized(false)} className="text-xs border border-cyber-orange px-2 hover:bg-cyber-orange hover:text-black transition-colors">□</button>
+            <button onClick={handleClose} className="text-xs border border-cyber-orange px-1.5 hover:bg-red-500 hover:text-white hover:border-red-500 transition-colors">×</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex-1 grid grid-cols-12 gap-2 h-full overflow-hidden py-2">
-      <section className="col-span-3 flex flex-col gap-2">
-        <div className="retro-border flex-grow p-4 flex flex-col items-center justify-center bg-black">
-          <div className="paper-texture p-2 text-black w-full max-w-[200px]">
-            <div className="border-2 border-black p-1 mb-2">
-              <div className="w-full aspect-square bg-gray-400 flex items-center justify-center border-2 border-black overflow-hidden">
-                <img
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEomVrD_0j_-0xgadr_XbiWMMc9xyqhUQ02m7LDaS28nY85Rahm0xShuzFbQ2Mzz_BXwZl75IBuYxzYMto9Jey1EhMC-adaubNCDbT7BAyPGWeVsfF-pBmtN5jsPs114poypSQwFd-qeFFAVar-aa_YeZWAOlL8CE65FgYaolizFxSYvl9UVR6VspfIotjuejMSx6kDnBHkvC95w94VUXupgMFvgdisMz7c8Y8OhLqaS12HZn-mCftWwvRuPhEwEjwrZwRyMzu3x4"
-                  alt="Detective Alex"
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-            </div>
-            <div className="text-center text-xs font-bold leading-tight uppercase">
-              Perfil de Alex<br />(Detective)
-            </div>
-          </div>
-        </div>
-        <div className="retro-border p-2 bg-black">
-          <h2 className="text-xs font-bold uppercase">Perfil de Alex (Detective)</h2>
-        </div>
-      </section>
+    <div className="flex-1 flex items-center justify-center h-full overflow-hidden p-6 py-10">
+      <div className="w-full max-w-5xl flex gap-8 h-full max-h-[600px]">
+        {/* PANEL IZQUIERDO: Perfil y Avatar */}
+        <section className="w-1/3 retro-border bg-black shadow-lg shadow-cyber-orange/10 p-6 flex flex-col items-center justify-center text-center relative border-cyber-orange/40 shrink-0">
+          <h3 className="text-cyber-orange font-bold text-2xl uppercase mb-6 truncate w-full px-2" title={`Perfil de ${playerName || "Alex"}`}>
+            Perfil de <br />
+            <span className="text-white">{playerName || "Alex"}</span>
+          </h3>
 
-      <section className="col-span-6 flex flex-col gap-2 overflow-y-auto min-h-0 cyber-scroll">
-        <div className="retro-border p-6 text-center flex flex-col items-center justify-center bg-black relative">
-          <div className="absolute top-1 right-1 flex gap-1">
-            <span className="text-[10px] border border-cyber-orange px-1">_</span>
-            <span className="text-[10px] border border-cyber-orange px-1">□</span>
-            <span className="text-[10px] border border-cyber-orange px-1">×</span>
-          </div>
-          <div className="border-4 border-cyber-orange p-4 mb-4">
-            <h1 className="text-4xl md:text-5xl font-black tracking-widest uppercase">CyberDetective</h1>
-          </div>
-          <h2 className="text-2xl font-bold mb-1 uppercase">El Árbol de la Verdad</h2>
-          <p className="text-sm mb-1">(V. 1.0)</p>
-          <p className="text-xs uppercase tracking-widest opacity-70">Sistema de investigación de ciberacoso</p>
-        </div>
-
-        <div className="retro-border flex-grow min-h-0 p-4 flex flex-col gap-3 items-center overflow-y-auto justify-center bg-black cyber-scroll">
-          <button
-            onClick={() => onNavigate('case-tree')}
-            className="w-full max-w-md py-2 border-2 border-cyber-orange bg-cyber-orange text-black font-bold hover:brightness-110 transition-all uppercase"
-          >
-            <span className="block text-sm">Nueva Investigación</span>
-            <span className="block text-[10px]">(Nivel 1: The First Signs)</span>
-          </button>
-          <button
-            onClick={handleLoad}
-            className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
-          >
-            Cargar Expediente Guardado
-          </button>
-          <button
-            onClick={() => setShowHelp(true)}
-            className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
-          >
-            <span className="block text-sm">Sistema de Ayuda</span>
-            <span className="block text-[10px]">(las reglas, árboles, etc.)</span>
-          </button>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
-          >
-            <span className="block text-sm">Inclusión y Ajustes</span>
-            <span className="block text-[10px]">(Accesibilidad, selección apariencia)</span>
-          </button>
-          <button className="w-full max-w-md py-2 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase">
-            Salir de la Terminal
-          </button>
-        </div>
-      </section>
-
-      <section className="col-span-3 flex flex-col gap-2">
-        <div className="retro-border flex-grow flex flex-col bg-black">
-          <div className="panel-header">Manual de Referencia Táctica</div>
-          <div className="flex-grow p-4 flex items-center justify-center">
-            <div className="paper-texture p-2 text-black w-full h-full max-h-[160px] flex gap-1">
-              <div className="flex-1 border-r border-black p-1 text-[8px] font-bold uppercase">Manual de Referencia Táctica</div>
-              <div className="flex-1 p-1 text-[8px] font-bold uppercase">Manual de Referencia Táctica</div>
+          <div className="flex items-center gap-3 mb-6">
+            <button onClick={prevAvatar} className="text-cyber-orange hover:bg-cyber-orange/20 px-3 py-6 text-2xl font-bold border border-transparent hover:border-cyber-orange transition-all">&lt;</button>
+            <div className="w-32 h-32 border-4 border-cyber-orange overflow-hidden bg-gray-800 shadow-xl shadow-cyber-orange/20">
+              <img src={DETECTIVE_AVATARS[avatarIdx]} alt="Detective Avatar" className="w-full h-full object-cover" />
             </div>
+            <button onClick={nextAvatar} className="text-cyber-orange hover:bg-cyber-orange/20 px-3 py-6 text-2xl font-bold border border-transparent hover:border-cyber-orange transition-all">&gt;</button>
           </div>
-        </div>
-        <div className="retro-border flex-grow flex flex-col bg-black">
-          <div className="panel-header">Manual de Referencia Táctica</div>
-          <div className="flex-grow p-4 flex items-center justify-center">
-            <div className="paper-texture p-2 text-black w-full h-full max-h-[160px] flex flex-col justify-between relative">
-              <div className="flex gap-1 h-3/4">
-                <div className="flex-1 border-r border-black p-1 text-[8px] font-bold leading-tight uppercase">Manual de Referencia Táctica</div>
-                <div className="flex-1 p-1 text-[8px] font-bold leading-tight uppercase">Manual de Referencia Táctica (Vencedor)</div>
-              </div>
-              <div className="absolute bottom-2 right-2 stamp text-[8px] bg-paper-bg">
-                Manual de<br />Referencia<br />Táctica
-              </div>
+
+          <p className="text-xs opacity-70 uppercase tracking-widest mt-2">Detective Autorizado</p>
+          <p className="text-[10px] text-green-400 mt-2 font-bold tracking-widest">[ ESTADO: ACTIVO ]</p>
+          
+          <div className="mt-8 border-t border-cyber-orange/30 pt-4 w-full text-[10px] text-cyber-orange/60 uppercase">
+            Selecciona tu apariencia para la investigación
+          </div>
+        </section>
+
+        {/* PANEL DERECHO: Título y Botones */}
+        <section className="w-2/3 flex flex-col gap-4 overflow-y-auto cyber-scroll pr-2">
+          <div className="retro-border p-8 text-center flex flex-col items-center justify-center bg-black relative shadow-lg shadow-cyber-orange/10 border-cyber-orange/40 shrink-0">
+            <div className="absolute top-2 right-2 flex gap-1">
+              <button onClick={() => setIsMinimized(true)} className="text-xs border border-cyber-orange px-1 hover:bg-cyber-orange hover:text-black transition-colors">_</button>
+              <button onClick={toggleFullscreen} className="text-xs border border-cyber-orange px-1 hover:bg-cyber-orange hover:text-black transition-colors">□</button>
+              <button onClick={handleClose} className="text-xs border border-cyber-orange px-1 hover:bg-red-500 hover:text-white hover:border-red-500 transition-colors">×</button>
             </div>
+            <div className="border-4 border-cyber-orange p-3 mb-2 inline-block bg-cyber-orange/5">
+              <h1 className="text-4xl md:text-5xl font-black tracking-widest uppercase text-cyber-orange">CyberDetective</h1>
+            </div>
+            <h2 className="text-2xl font-bold mb-1 uppercase text-white">El Árbol de la Verdad</h2>
+            <p className="text-xs uppercase tracking-widest opacity-70">Sistema de investigación de ciberacoso</p>
           </div>
-        </div>
-      </section>
+
+          <div className="retro-border p-6 flex flex-col gap-3 items-center justify-center bg-black shadow-lg shadow-cyber-orange/5 border-cyber-orange/40 flex-grow">
+            <button
+              onClick={() => onNavigate('case-tree')}
+              className="w-full max-w-lg py-3 border-2 border-cyber-orange bg-cyber-orange text-black font-bold hover:brightness-110 transition-all uppercase"
+            >
+              <span className="block text-base">Nueva Investigación</span>
+              <span className="block text-xs mt-1">(Nivel 1: The First Signs)</span>
+            </button>
+            <button
+              onClick={handleLoad}
+              className="w-full max-w-lg py-3 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
+            >
+              Cargar Expediente Guardado
+            </button>
+            <button
+              onClick={() => setShowHelp(true)}
+              className="w-full max-w-lg py-3 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
+            >
+              <span className="block text-base">Sistema de Ayuda</span>
+              <span className="block text-xs mt-1 opacity-80">(las reglas, árboles, etc.)</span>
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="w-full max-w-lg py-3 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
+            >
+              <span className="block text-base">Inclusión y Ajustes</span>
+              <span className="block text-xs mt-1 opacity-80">(Accesibilidad, selección apariencia)</span>
+            </button>
+            <button onClick={handleClose} className="w-full max-w-lg py-3 mt-4 border-2 border-red-900/50 text-red-500 font-bold hover:bg-red-900/30 hover:border-red-500 transition-all uppercase opacity-70 hover:opacity-100">
+              Salir de la Terminal
+            </button>
+          </div>
+        </section>
+      </div>
     </div>
   );
 };
@@ -505,7 +552,7 @@ const TacticalBoard = () => (
               <div className="w-3 h-3 bg-red-400"></div>
               <strong>Email:</strong>
             </div>
-            <p>De: Dexio - "¡Kadie te soporta, Valeria! 🙄🙄🙄"</p>
+            <p>De: Dexio - "¡Nadie te soporta, Valeria! 🙄🙄🙄"</p>
           </div>
         </div>
       </section>
@@ -599,10 +646,10 @@ const TacticalBoard = () => (
 // --- Level metadata ---
 
 const LEVEL_DESCRIPTIONS: Record<number, { name: string; icon: string; description: string }> = {
-  1: { name: 'LAS PRIMERAS SEÑALES',   icon: '💬', description: 'Mensajes ofensivos en redes sociales. Identifica los casos de Injuria (Art. 220).' },
-  2: { name: 'EL RUMOR VIRAL',         icon: '📢', description: 'Información falsa se difunde por la red escolar. Clasifica los casos de Calumnia (Art. 221).' },
-  3: { name: 'LA CUENTA FANTASMA',     icon: '👤', description: 'Alguien usurpa la identidad de Valeria en línea. Investiga la Suplantación (Ley 1273).' },
-  4: { name: 'ATAQUE COORDINADO',      icon: '⚠️', description: 'El acoso escala a amenazas directas y hostigamiento sistemático. Máxima presión.' },
+  1: { name: 'LAS PRIMERAS SEÑALES', icon: '💬', description: 'Mensajes ofensivos en redes sociales. Identifica los casos de Injuria (Art. 220).' },
+  2: { name: 'EL RUMOR VIRAL', icon: '📢', description: 'Información falsa se difunde por la red escolar. Clasifica los casos de Calumnia (Art. 221).' },
+  3: { name: 'LA CUENTA FANTASMA', icon: '👤', description: 'Alguien usurpa la identidad de Valeria en línea. Investiga la Suplantación (Ley 1273).' },
+  4: { name: 'ATAQUE COORDINADO', icon: '⚠️', description: 'El acoso escala a amenazas directas y hostigamiento sistemático. Máxima presión.' },
   5: { name: 'EL NÚCLEO DE LA VERDAD', icon: '🔍', description: 'Fase final. Identifica la red criminal detrás del ataque coordinado y emite el veredicto.' },
 };
 
@@ -766,19 +813,39 @@ export default function App() {
   // Keep isMutedRef in sync so event listeners always see the latest value
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
-  // Background music — starts on first user interaction (browser autoplay policy)
+  // Background music initialization and playback control (plays everywhere unless muted)
   useEffect(() => {
-    const audio = new Audio('/Sonido de fondo.mp3');
-    audio.loop = true;
-    audio.volume = 0.25;
-    audioRef.current = audio;
-    const start = () => { audio.play().catch(() => {}); window.removeEventListener('click', start); window.removeEventListener('keydown', start); };
-    window.addEventListener('click', start);
-    window.addEventListener('keydown', start);
-    return () => { audio.pause(); window.removeEventListener('click', start); window.removeEventListener('keydown', start); };
-  }, []);
+    if (!audioRef.current) {
+      const audio = new Audio('/Sonido de fondo.mp3');
+      audio.loop = true;
+      audio.volume = 0.25;
+      audioRef.current = audio;
+    }
 
-  useEffect(() => { if (audioRef.current) audioRef.current.muted = isMuted; }, [isMuted]);
+    const currentMusic = audioRef.current;
+    
+    if (!isMuted) {
+      currentMusic.play().catch(() => { });
+    } else {
+      currentMusic.pause();
+    }
+
+    const unblockPlay = () => {
+      if (!isMuted) {
+        currentMusic.play().catch(() => {});
+      }
+      window.removeEventListener('click', unblockPlay);
+      window.removeEventListener('keydown', unblockPlay);
+    };
+
+    window.addEventListener('click', unblockPlay);
+    window.addEventListener('keydown', unblockPlay);
+
+    return () => {
+      window.removeEventListener('click', unblockPlay);
+      window.removeEventListener('keydown', unblockPlay);
+    };
+  }, [isMuted]);
 
   // Preload button sound
   useEffect(() => {
@@ -793,7 +860,7 @@ export default function App() {
       const target = e.target as HTMLElement;
       if (target.closest('button')) {
         const audio = buttonAudioRef.current;
-        if (audio) { audio.currentTime = 0; audio.play().catch(() => {}); }
+        if (audio) { audio.currentTime = 0; audio.play().catch(() => { }); }
       }
     };
     document.addEventListener('click', handleClick);
@@ -876,7 +943,7 @@ export default function App() {
     <div className="h-screen w-screen flex flex-col p-2 crt-effect relative">
       <div className="scanline" />
 
-      {screen !== 'boot' && screen !== 'intro' && (
+      {screen !== 'boot' && screen !== 'intro' && screen !== 'main-menu' && (
         <Header
           title={getScreenTitle()}
           screen={screen}
@@ -898,7 +965,7 @@ export default function App() {
           >
             {screen === 'boot' && <BootScreen onComplete={() => setScreen('intro')} />}
             {screen === 'intro' && <IntroScreen onComplete={(name) => { setPlayerName(name); setScreen('main-menu'); }} />}
-            {screen === 'main-menu' && <MainMenu onNavigate={setScreen} setShowHelp={setShowHelp} setShowSettings={setShowSettings} loadGame={loadGame} />}
+            {screen === 'main-menu' && <MainMenu onNavigate={setScreen} setShowHelp={setShowHelp} setShowSettings={setShowSettings} loadGame={loadGame} playerName={state.playerName} />}
 
             {screen === 'case-tree' && (
               <div className="flex-1 flex space-x-2 overflow-hidden py-2 h-full">
@@ -1087,7 +1154,7 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {screen !== 'boot' && screen !== 'intro' && screen !== 'game-over' && (
+      {screen !== 'boot' && screen !== 'intro' && screen !== 'game-over' && screen !== 'main-menu' && (
         <Footer
           message={message}
           amonestations={state.amonestations}
