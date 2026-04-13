@@ -1,14 +1,25 @@
 import { Evidence, CrimeType } from '../types/game';
 
-const AUTHORS = [
+export const AUTHORS = [
   'ANON_7834', 'Dexio', 'ShadowUser', 'NetGhost',
   'Valeria_Fan_1', 'JusticeSeeker', 'CyberBully_99', 'Ghost_Protocol',
   'DarkNet_X', 'NullUser88', 'SilentTroll', 'TheRealDark'
 ];
 
+export const AGE_RANGE: [number, number] = [15, 25];
+
+export const getRandomAge = (excludeAge: number | null = null): number => {
+  const [minAge, maxAge] = AGE_RANGE;
+  const ages = [] as number[];
+  for (let age = minAge; age <= maxAge; age++) {
+    if (age !== excludeAge) ages.push(age);
+  }
+  return ages[Math.floor(Math.random() * ages.length)];
+};
+
 // Each level has ONLY its designated crime type
-const EVIDENCE_TEMPLATES: Record<number, { type: Evidence['type']; content: string[]; crime: CrimeType; details: string }[]> = {
-  // Nivel 1 — INJURIA (Art. 220)
+export const EVIDENCE_TEMPLATES: Record<number, { type: Evidence['type']; content: string[]; crime: CrimeType; details: string }[]> = {
+  // Nivel 1 — INJURIA (Art. 220) y COMENTARIOS POSITIVOS
   1: [
     {
       type: 'Tweet',
@@ -42,6 +53,40 @@ const EVIDENCE_TEMPLATES: Record<number, { type: Evidence['type']; content: stri
       ],
       crime: 'Injuria',
       details: 'Publicación ofensiva masiva que humilla a la víctima ante sus conocidos.'
+    },
+    // Comentarios positivos - no son evidencia de delito
+    {
+      type: 'Tweet',
+      content: [
+        "¡Valeria es una gran amiga! Siempre está ahí cuando la necesitas. ❤️",
+        "Valeria tiene un corazón enorme, es la mejor persona que conozco.",
+        "Feliz cumpleaños Valeria! Eres increíble y mereces lo mejor. 🎉",
+        "Valeria ayuda a todos en la escuela, es un ángel. 😊"
+      ],
+      crime: 'None',
+      details: 'Comentario positivo y de apoyo que no constituye delito alguno.'
+    },
+    {
+      type: 'Chat',
+      content: [
+        "Valeria, gracias por ayudarme con la tarea ayer. Eres la mejor!",
+        "Me encanta cómo Valeria siempre tiene una sonrisa para todos.",
+        "Valeria es super talentosa en arte, sus dibujos son geniales.",
+        "Qué buena onda tienes Valeria, siempre positiva. 👍"
+      ],
+      crime: 'None',
+      details: 'Mensaje de aprecio y reconocimiento positivo en conversación privada.'
+    },
+    {
+      type: 'Post',
+      content: [
+        "Valeria es un ejemplo a seguir en NetCity. ¡Orgullo de tenerla como amiga!",
+        "Compartiendo esta foto de Valeria porque ilumina cualquier día. 🌟",
+        "Valeria organiza las mejores fiestas, siempre incluye a todos. 🎊",
+        "Qué suerte tener a alguien como Valeria en nuestra comunidad."
+      ],
+      crime: 'None',
+      details: 'Publicación positiva que destaca cualidades y contribuciones de la persona.'
     }
   ],
 
@@ -157,7 +202,7 @@ const EVIDENCES_PER_LEVEL: Record<number, number> = {
 };
 
 // Gravity range per level (defines AVL insertion key)
-const GRAVITY_RANGE: Record<number, [number, number]> = {
+export const GRAVITY_RANGE: Record<number, [number, number]> = {
   1: [1, 2],
   2: [3, 4],
   3: [5, 6],
@@ -165,12 +210,13 @@ const GRAVITY_RANGE: Record<number, [number, number]> = {
   5: [9, 10],
 };
 
-export const generateEvidence = (level: number, excludeIds: string[] = []): Evidence => {
+export const generateEvidence = (level: number, excludeIds: string[] = [], excludeAge: number | null = null): Evidence => {
   const clampedLevel = Math.min(5, Math.max(1, level));
   const levelTemplates = EVIDENCE_TEMPLATES[clampedLevel] || EVIDENCE_TEMPLATES[1];
   const template = levelTemplates[Math.floor(Math.random() * levelTemplates.length)];
   const content = template.content[Math.floor(Math.random() * template.content.length)];
   const author = AUTHORS[Math.floor(Math.random() * AUTHORS.length)];
+  const age = getRandomAge(excludeAge);
   const [minG, maxG] = GRAVITY_RANGE[clampedLevel];
   const gravity = minG + Math.floor(Math.random() * (maxG - minG + 1));
 
@@ -184,6 +230,7 @@ export const generateEvidence = (level: number, excludeIds: string[] = []): Evid
     id,
     type: template.type,
     author,
+    age,
     content: `"${author}: ${content}"`,
     timestamp: new Date().toLocaleTimeString(),
     gravity,
@@ -192,14 +239,66 @@ export const generateEvidence = (level: number, excludeIds: string[] = []): Evid
   };
 };
 
-export const generateDayEvidences = (level: number, excludeIds: string[]): Evidence[] => {
-  const count = EVIDENCES_PER_LEVEL[level] ?? 2;
+export const generateDayEvidences = (day: number, excludeIds: string[], excludeAge: number | null = null): Evidence[] => {
+  // Determine available crime types for this day (including 'None' for positive comments)
+  let availableCrimeTypes: string[] = ['None']; // Positive comments always available
+  if (day <= 2) {
+    availableCrimeTypes.push('Injuria');
+  } else if (day <= 4) {
+    availableCrimeTypes.push('Injuria', 'Calumnia');
+  } else if (day <= 6) {
+    availableCrimeTypes.push('Injuria', 'Calumnia', 'Suplantación');
+  } else if (day <= 8) {
+    availableCrimeTypes.push('Injuria', 'Calumnia', 'Suplantación', 'Hostigamiento');
+  } else {
+    availableCrimeTypes.push('Injuria', 'Calumnia', 'Suplantación', 'Hostigamiento', 'Amenazas');
+  }
+
+  // Filter templates to only include available crime types
+  const filteredTemplates: { type: Evidence['type']; content: string[]; crime: string; details: string }[] = [];
+  
+  Object.entries(EVIDENCE_TEMPLATES).forEach(([level, templates]) => {
+    templates.forEach(template => {
+      if (availableCrimeTypes.includes(template.crime)) {
+        filteredTemplates.push(template);
+      }
+    });
+  });
+
+  const count = EVIDENCES_PER_LEVEL[Math.min(5, Math.max(1, day))] ?? 2;
   const result: Evidence[] = [];
   const usedIds = [...excludeIds];
+  
   for (let i = 0; i < count; i++) {
-    const ev = generateEvidence(level, usedIds);
-    result.push(ev);
-    usedIds.push(ev.id);
+    // Generate evidence using filtered templates
+    const template = filteredTemplates[Math.floor(Math.random() * filteredTemplates.length)];
+    const content = template.content[Math.floor(Math.random() * template.content.length)];
+    const author = AUTHORS[Math.floor(Math.random() * AUTHORS.length)];
+    const age = getRandomAge(excludeAge);
+    const level = Math.min(5, Math.max(1, day));
+    const [minG, maxG] = GRAVITY_RANGE[level];
+    const gravity = minG + Math.floor(Math.random() * (maxG - minG + 1));
+
+    // Unique ID that is never in excludeIds
+    let id: string;
+    do {
+      id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
+    } while (excludeIds.includes(id));
+
+    result.push({
+      id,
+      type: template.type,
+      author,
+      age,
+      content: `"${author}: ${content}"`,
+      timestamp: new Date().toLocaleTimeString(),
+      gravity,
+      correctCrime: template.crime as any,
+      details: template.details,
+    });
+    
+    usedIds.push(id);
   }
+  
   return result;
 };

@@ -44,12 +44,13 @@ export class AVLTree {
     return y;
   }
 
-  static insert(node: GameNode | null, id: string, evidenceId: string, crimeType: CrimeType, gravity: number): GameNode {
+  static insert(node: GameNode | null, id: string, evidenceId: string, crimeType: CrimeType, age: number, gravity: number): GameNode {
     if (!node) {
       return {
         id,
         evidenceId,
         crimeType,
+        age,
         gravity,
         left: null,
         right: null,
@@ -57,13 +58,13 @@ export class AVLTree {
       };
     }
 
-    if (gravity < node.gravity) {
-      node.left = this.insert(node.left, id, evidenceId, crimeType, gravity);
-    } else if (gravity > node.gravity) {
-      node.right = this.insert(node.right, id, evidenceId, crimeType, gravity);
+    if (age < node.age) {
+      node.left = this.insert(node.left, id, evidenceId, crimeType, age, gravity);
+    } else if (age > node.age) {
+      node.right = this.insert(node.right, id, evidenceId, crimeType, age, gravity);
     } else {
-      // Equal gravity, insert right
-      node.right = this.insert(node.right, id, evidenceId, crimeType, gravity);
+      // Equal age, insert right
+      node.right = this.insert(node.right, id, evidenceId, crimeType, age, gravity);
     }
 
     this.updateHeight(node);
@@ -71,23 +72,23 @@ export class AVLTree {
     const balance = this.getBalance(node);
 
     // Left Left Case
-    if (balance > 1 && gravity < (node.left?.gravity || 0)) {
+    if (balance > 1 && this.getBalance(node.left) >= 0) {
       return this.rotateRight(node);
     }
 
-    // Right Right Case
-    if (balance < -1 && gravity > (node.right?.gravity || 0)) {
-      return this.rotateLeft(node);
-    }
-
     // Left Right Case
-    if (balance > 1 && gravity > (node.left?.gravity || 0)) {
+    if (balance > 1 && this.getBalance(node.left) < 0) {
       node.left = this.rotateLeft(node.left!);
       return this.rotateRight(node);
     }
 
+    // Right Right Case
+    if (balance < -1 && this.getBalance(node.right) <= 0) {
+      return this.rotateLeft(node);
+    }
+
     // Right Left Case
-    if (balance < -1 && gravity < (node.right?.gravity || 0)) {
+    if (balance < -1 && this.getBalance(node.right) > 0) {
       node.right = this.rotateRight(node.right!);
       return this.rotateLeft(node);
     }

@@ -1,9 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=VT323&family=Share+Tech+Mono&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-mono: "Share Tech Mono", "Courier Prime", ui-monospace, SFMono-Regular, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --font-vt323: "VT323", monospace;
+  --font-jetbrains: "JetBrains Mono", monospace;
   
   --color-cyber-orange: #f69322;
   --color-cyber-orange-dim: #8B5A2B;
@@ -14,8 +14,14 @@
 }
 
 @layer base {
+  html {
+    font-size: 87.5%;
+  }
+  *, *::before, *::after {
+    font-family: 'JetBrains Mono', monospace !important;
+  }
   body {
-    @apply bg-cyber-bg text-cyber-orange font-mono overflow-hidden h-screen w-screen select-none;
+    @apply bg-cyber-bg text-cyber-orange overflow-hidden h-screen w-screen select-none;
   }
 }
 
@@ -79,6 +85,11 @@
 @keyframes scan {
   0% { top: 0; }
   100% { top: 100%; }
+}
+
+@keyframes dash-flow {
+  from { stroke-dashoffset: 8; }
+  to   { stroke-dashoffset: 0; }
 }
 
 /* CRT Flicker Effect */
