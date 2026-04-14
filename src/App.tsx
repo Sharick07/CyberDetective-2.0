@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { useGameState, DayTransitionInfo } from './logic/useGameState';
-import { CRIME_INFO, CrimeType, GameNode, CatalogueEntry, GameState } from './types/game';
+import { CRIME_INFO, CrimeType, GameNode, CatalogueEntry, GameState, LevelCulprit } from './types/game';
 import {
   Terminal,
   Search,
@@ -768,11 +768,92 @@ const PENALTY_OPTIONS: Record<string, { label: string; detail: string }[]> = {
   ],
 };
 
-const InvestigationMap = ({ cataloguedLog, currentLevel }: { cataloguedLog: CatalogueEntry[]; currentLevel: number }) => {
+const CRIME_MANUAL: Record<string, {
+  howTo: string;
+  penalties: { name: string; when: string }[];
+  examples: { comment: string; penalty: string; reason: string }[];
+  alexTip: string;
+}> = {
+  'Injuria': {
+    howTo: 'Para penalizar Injuria (Art. 220 C.P.), evalúa la GRAVEDAD del insulto, si fue público o privado, y el alcance de difusión. A mayor humillación pública y daño reputacional, más severa debe ser la pena.',
+    penalties: [
+      { name: 'Multa (13.3 – 120 SMMLV)', when: 'Usa esta pena cuando el insulto es de baja gravedad, ocurrió en un contexto privado o tiene poca difusión. Ejemplo: un mensaje ofensivo en un chat privado.' },
+      { name: 'Prisión 16 a 54 meses', when: 'Aplica cuando la injuria es grave, pública, reiterada o causó daño demostrable a la reputación de la víctima. Ejemplo: insultos virales en redes con miles de vistas.' },
+      { name: 'Retractación pública', when: 'Selecciona esta pena cuando la víctima necesita restaurar su nombre. El agresor debe disculparse en los mismos medios donde publicó la ofensa.' },
+    ],
+    examples: [
+      { comment: '"Eres una completa inútil, nadie te quiere aquí."', penalty: 'Multa (13.3 – 120 SMMLV)', reason: 'Insulto directo pero en contexto limitado — una multa económica es proporcional.' },
+      { comment: '"Qué asco de persona" (publicado en grupo de 500+ miembros)', penalty: 'Prisión 16 a 54 meses', reason: 'Alta difusión pública y daño grave al buen nombre → se justifica pena de prisión.' },
+      { comment: '"La peor del curso, una vergüenza total" (publicado en redes)', penalty: 'Retractación pública', reason: 'El daño fue público y la reputación necesita restauración → obligar retractación.' },
+    ],
+    alexTip: 'Detective Alex: Para penalizar Injuria, pregúntate: ¿Fue público o privado? ¿Cuánta gente lo vio? Si fue privado y leve → Multa. Si fue masivo y grave → Prisión. Si la víctima necesita limpiar su nombre → Retractación.',
+  },
+  'Calumnia': {
+    howTo: 'Para penalizar Calumnia (Art. 221 C.P.), considera que la acusación falsa de un delito es MÁS GRAVE que un simple insulto. Evalúa el tipo de delito imputado, la difusión y las consecuencias reales para la víctima.',
+    penalties: [
+      { name: 'Multa (13.3 – 120 SMMLV)', when: 'Aplica cuando la acusación falsa tuvo difusión limitada y no generó consecuencias graves para la víctima (no perdió empleo, no fue investigada, etc.).' },
+      { name: 'Prisión 16 a 72 meses', when: 'Usa esta pena cuando la falsa acusación causó daños reales: la víctima fue investigada, perdió oportunidades, o el delito imputado era muy grave.' },
+      { name: 'Rectificación pública', when: 'Selecciona cuando la víctima necesita que se aclare públicamente que la acusación era falsa, especialmente si la calumnia se difundió ampliamente.' },
+    ],
+    examples: [
+      { comment: '"@Valeria le robó dinero a sus compañeros, todos lo saben."', penalty: 'Prisión 16 a 72 meses', reason: 'Imputar hurto públicamente puede causar investigación policial injusta → pena de prisión.' },
+      { comment: '"Cuidado con ella, estafó a varias personas" (en chat pequeño)', penalty: 'Multa (13.3 – 120 SMMLV)', reason: 'Difusión limitada y sin consecuencias graves demostradas → multa proporcional.' },
+      { comment: '"Es una criminal, vendió datos ilegalmente" (post viral)', penalty: 'Rectificación pública', reason: 'La falsa acusación se volvió viral → se necesita desmentido público para restaurar la verdad.' },
+    ],
+    alexTip: 'Detective Alex: Para penalizar Calumnia, evalúa: ¿Qué delito le atribuyeron falsamente? ¿Tuvo consecuencias reales? Si fue grave y con daño real → Prisión. Si fue contenido → Multa. Si necesita aclaración pública → Rectificación.',
+  },
+  'Suplantación': {
+    howTo: 'Para penalizar Suplantación (Ley 1273/09, Art. 269C), ten en cuenta que es un DELITO INFORMÁTICO con penas más severas. Evalúa si se crearon perfiles falsos, si se accedió a cuentas reales, y el daño causado.',
+    penalties: [
+      { name: 'Prisión 48 a 96 meses', when: 'Aplica siempre que haya habido suplantación digital comprobada. Es la pena base — el rango aumenta según la gravedad (acceso no autorizado, daño causado).' },
+      { name: 'Multa 100 a 1000 SMMLV', when: 'Usa esta pena cuando el enfoque sea la sanción económica: el agresor obtuvo beneficios económicos mediante la suplantación o causó perjuicios patrimoniales.' },
+      { name: 'Eliminación de perfiles falsos', when: 'Selecciona cuando existan cuentas, perfiles o contenidos falsos activos que deban ser retirados por orden judicial para detener el daño continuo.' },
+    ],
+    examples: [
+      { comment: '"Creé una cuenta como @ValeriaReal y hablo con sus amigos."', penalty: 'Eliminación de perfiles falsos', reason: 'Hay un perfil falso activo causando daño continuo → prioridad: eliminarlo judicialmente.' },
+      { comment: '"Entré a su cuenta y mandé mensajes como si fuera ella."', penalty: 'Prisión 48 a 96 meses', reason: 'Acceso no autorizado + suplantación directa → pena de prisión por delito informático grave.' },
+      { comment: '"Subí screenshots editados donde dice cosas que nunca dijo."', penalty: 'Multa 100 a 1000 SMMLV', reason: 'Creación de contenido falso con daño reputacional → sanción económica elevada.' },
+    ],
+    alexTip: 'Detective Alex: En Suplantación las penas son más altas porque es delito informático. ¿Hay perfil falso activo? → Eliminación. ¿Accedió a cuentas reales? → Prisión (48-96 meses). ¿Hubo ganancia económica? → Multa alta.',
+  },
+  'Amenazas/Hostig.': {
+    howTo: 'Esta capa agrupa dos delitos distintos con penalizaciones diferentes. Para HOSTIGAMIENTO (Art. 134B): evalúa la repetición y duración. Para AMENAZAS (Art. 347): evalúa la gravedad y credibilidad de la amenaza.',
+    penalties: [
+      { name: 'Prisión 12 a 36 meses (Hostigamiento)', when: 'Aplica cuando hay un patrón reiterado de mensajes acosadores que generan miedo o angustia sostenida en la víctima.' },
+      { name: 'Medida de alejamiento', when: 'Selecciona cuando la víctima necesita protección inmediata. Prohíbe todo contacto digital y/o físico entre el agresor y la víctima.' },
+      { name: 'Prisión 16 a 72 meses (Amenazas)', when: 'Aplica cuando hay amenazas creíbles de daño. A mayor gravedad de la amenaza y riesgo real, mayor la pena dentro del rango.' },
+      { name: 'Detención preventiva', when: 'Usa cuando el riesgo para la víctima es inminente y fundado. Es una medida cautelar urgente, no una pena final.' },
+      { name: 'Tratamiento psicológico obligatorio', when: 'Complementa otras penas cuando el agresor muestra comportamiento compulsivo que requiere intervención profesional.' },
+    ],
+    examples: [
+      { comment: '"Te envié 40 mensajes hoy. Sé que lees. Respóndeme."', penalty: 'Prisión 12-36 meses + Medida de alejamiento', reason: 'Patrón compulsivo reiterado → prisión por hostigamiento + alejamiento para proteger a la víctima.' },
+      { comment: '"Si no me depositas $500, publico tus fotos mañana."', penalty: 'Prisión 16-72 meses + Detención preventiva', reason: 'Amenaza grave con plazo definido → prisión por amenazas + detención ante riesgo inminente.' },
+      { comment: '"Llevo meses así y no pararé nunca."', penalty: 'Prisión 12-36 meses + Tratamiento psicológico', reason: 'Hostigamiento prolongado con conducta compulsiva → prisión + tratamiento obligatorio.' },
+    ],
+    alexTip: 'Detective Alex: ¿Es repetición constante? → Hostigamiento (12-36 meses) + Alejamiento. ¿Anuncia daño concreto? → Amenazas (16-72 meses). ¿Riesgo inminente? → Detención preventiva. ¿Conducta compulsiva? → Agregar tratamiento psicológico.',
+  },
+  'Concierto': {
+    howTo: 'Para penalizar Concierto para delinquir (Art. 340 C.P.), las penas son las MÁS SEVERAS porque implican criminalidad organizada. Evalúa el número de participantes, la planificación y la gravedad de los delitos coordinados.',
+    penalties: [
+      { name: 'Prisión 6 a 12 años', when: 'Pena base para cualquier caso de asociación criminal organizada. Aplica cuando se demuestra coordinación grupal para cometer delitos.' },
+      { name: 'Prisión hasta 18 años (agravada)', when: 'Aplica cuando el concierto es para cometer delitos graves, hay jerarquía clara, o los ataques son masivos y reiterados.' },
+      { name: 'Disolución del grupo criminal', when: 'Selecciona cuando existe un grupo o canal organizado que debe ser desarticulado judicialmente para detener la actividad criminal.' },
+    ],
+    examples: [
+      { comment: '"Todos atacamos a @Valeria mañana a las 8PM, ya está coordinado."', penalty: 'Prisión 6 a 12 años', reason: 'Coordinación grupal básica con objetivo y hora → pena base por concierto para delinquir.' },
+      { comment: '"Ya tenemos 15 cuentas para el raid. El jefe dió la orden."', penalty: 'Prisión hasta 18 años', reason: 'Estructura jerárquica + preparación masiva + múltiples cuentas → agravante por organización sofisticada.' },
+      { comment: '"El grupo lleva 3 meses atacándola. Tenemos canal privado."', penalty: 'Disolución del grupo + Prisión 6-12 años', reason: 'Canal criminal activo + ataques sostenidos → desarticular grupo + prisión para los miembros.' },
+    ],
+    alexTip: 'Detective Alex: Concierto tiene las penas más duras. ¿Grupo básico coordinando? → 6-12 años. ¿Hay jerarquía y ataques masivos? → Hasta 18 años. ¿Existe canal o grupo activo? → Disolución obligatoria.',
+  },
+};
+
+const InvestigationMap = ({ cataloguedLog, currentLevel, levelCulprits, addSuspect }: { cataloguedLog: CatalogueEntry[]; currentLevel: number; levelCulprits: LevelCulprit[]; addSuspect: (evidenceId: string) => void }) => {
   const [selectedCapa, setSelectedCapa] = useState<number | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<CatalogueEntry | null>(null);
   const [alexMsg, setAlexMsg] = useState<string>('');
   const [penalizedIds, setPenalizedIds] = useState<string[]>([]);
+  const [manualCapa, setManualCapa] = useState<number | null>(null);
 
   const filteredLog = selectedCapa !== null
     ? cataloguedLog.filter(e => e.level === selectedCapa)
@@ -795,7 +876,90 @@ const InvestigationMap = ({ cataloguedLog, currentLevel }: { cataloguedLog: Cata
   ];
 
   return (
-    <div className="flex-1 grid grid-cols-12 gap-2 overflow-hidden py-2 h-full min-h-0" style={{ fontFamily: '"JetBrains Mono", "Share Tech Mono", monospace' }}>
+    <div className="flex-1 grid grid-cols-12 gap-2 overflow-hidden py-2 h-full min-h-0 relative" style={{ fontFamily: '"JetBrains Mono", "Share Tech Mono", monospace' }}>
+
+      {/* ===== Manual Modal — fixed overlay, always on top ===== */}
+      {manualCapa !== null && (() => {
+        const capaInfo = CAPA_INFO[manualCapa - 1];
+        const manualKey = Object.keys(CRIME_MANUAL).find(k => capaInfo.label.startsWith(k)) ?? capaInfo.label;
+        const manual = CRIME_MANUAL[manualKey];
+        return (
+          <div
+            className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-6"
+            style={{ fontFamily: '"JetBrains Mono","Share Tech Mono",monospace' }}
+            onClick={() => setManualCapa(null)}
+          >
+            <div
+              className="w-full max-w-lg bg-black border-2 border-cyber-orange flex flex-col shadow-2xl shadow-cyber-orange/30"
+              style={{ maxHeight: '85vh' }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="bg-cyber-orange text-black px-4 py-3 flex items-center justify-between shrink-0">
+                <span className="font-bold uppercase text-sm tracking-widest">📖 Manual — {capaInfo.emoji} {capaInfo.label}</span>
+                <button
+                  onClick={() => setManualCapa(null)}
+                  className="w-7 h-7 flex items-center justify-center border border-black/30 hover:bg-black hover:text-cyber-orange text-black font-bold text-base leading-none ml-3 transition-colors"
+                  title="Cerrar manual"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="overflow-y-auto p-4 space-y-4 text-[12px] text-cyber-orange/90">
+                {/* Article reference */}
+                <div className="border border-cyber-orange/30 px-3 py-1.5 text-[10px] text-cyber-orange/50 uppercase tracking-widest">
+                  {capaInfo.sublabel} — {capaInfo.description}
+                </div>
+
+                {manual ? (
+                  <>
+                    <div>
+                      <p className="font-bold uppercase text-cyber-orange border-b border-cyber-orange/30 pb-1 mb-2 text-[10px] tracking-widest">▸ Cómo penalizar</p>
+                      <p className="leading-relaxed text-cyber-orange/80">{manual.howTo}</p>
+                    </div>
+
+                    <div>
+                      <p className="font-bold uppercase text-cyber-orange border-b border-cyber-orange/30 pb-1 mb-2 text-[10px] tracking-widest">▸ Penas disponibles y cuándo aplicarlas</p>
+                      <div className="space-y-2">
+                        {manual.penalties.map((p, idx) => (
+                          <div key={idx} className="border border-cyber-orange/20 p-2 bg-cyber-orange/5">
+                            <p className="font-bold text-cyber-orange text-[11px] mb-1">⚖ {p.name}</p>
+                            <p className="text-cyber-orange/70 text-[11px] leading-snug">{p.when}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="font-bold uppercase text-cyber-orange border-b border-cyber-orange/30 pb-1 mb-2 text-[10px] tracking-widest">▸ Ejemplos: comentario → pena correcta</p>
+                      <div className="space-y-2">
+                        {manual.examples.map((ex, idx) => (
+                          <div key={idx} className="border border-cyber-orange/20 p-3 bg-cyber-orange/5">
+                            <p className="italic text-cyber-orange/90 mb-1">{ex.comment}</p>
+                            <p className="text-[11px] text-green-400 font-bold mb-0.5">✓ Pena: {ex.penalty}</p>
+                            <p className="text-[10px] text-cyber-orange/50">→ {ex.reason}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => { setManualCapa(null); setAlexMsg(manual.alexTip); }}
+                      className="w-full bg-amber-700 hover:bg-amber-600 text-white text-[12px] py-2.5 px-3 uppercase font-bold tracking-wide flex items-center justify-center gap-2 transition-colors"
+                    >
+                      🔍 Pedir ayuda al Detective Alex
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-cyber-orange/40 italic">Manual no disponible para esta capa.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Left panel: catalogued evidences */}
       <section className="col-span-3 flex flex-col h-full min-h-0">
         <div className="flex-1 retro-border flex flex-col bg-black h-full min-h-0">
@@ -824,13 +988,18 @@ const InvestigationMap = ({ cataloguedLog, currentLevel }: { cataloguedLog: Cata
                         onClick={() => { setSelectedEntry(selectedEntry?.evidenceId === entry.evidenceId ? null : entry); setAlexMsg(''); }}
                         className={cn(
                           "w-full text-left border p-2 mb-2 text-[11px] transition-all",
-                          selectedEntry?.evidenceId === entry.evidenceId
-                            ? "bg-cyber-orange/20 border-cyber-orange"
-                            : "bg-black border-cyber-orange/40 hover:border-cyber-orange/70"
+                          levelCulprits.some(c => c.evidenceId === entry.evidenceId && c.wasRoot)
+                            ? "bg-red-950 border-red-500"
+                            : selectedEntry?.evidenceId === entry.evidenceId
+                              ? "bg-cyber-orange/20 border-cyber-orange"
+                              : "bg-black border-cyber-orange/40 hover:border-cyber-orange/70"
                         )}
                       >
                         <div className="flex justify-between items-center mb-1">
-                          <span className="text-cyber-orange font-bold uppercase text-[10px]">{entry.crimeType}</span>
+                          <span className={cn(
+                            "font-bold uppercase text-[10px]",
+                            levelCulprits.some(c => c.evidenceId === entry.evidenceId && c.wasRoot) ? "text-red-400" : "text-cyber-orange"
+                          )}>{entry.crimeType}{levelCulprits.some(c => c.evidenceId === entry.evidenceId && c.wasRoot) ? " ★ CULPABLE" : ""}</span>
                           <span className="text-cyber-orange/40 text-[10px] uppercase">{entry.type}</span>
                         </div>
                         <p className="text-cyber-orange/80 italic leading-tight">{entry.content}</p>
@@ -880,30 +1049,42 @@ const InvestigationMap = ({ cataloguedLog, currentLevel }: { cataloguedLog: Cata
             const isAvailable = capa.level <= currentLevel;
             const count = cataloguedLog.filter(e => e.level === capa.level).length;
             return (
-              <button
+              <div
                 key={capa.level}
-                onClick={() => { if (isAvailable) { setSelectedCapa(isSelected ? null : capa.level); setSelectedEntry(null); setAlexMsg(''); } }}
-                title={isAvailable ? `Ver evidencias de Capa ${capa.level}` : 'Capa no desbloqueada'}
                 style={{ zIndex: 2 }}
-                className={`absolute ${capaPositions[i]} flex flex-col items-center transition-all ${
-                  isAvailable ? 'cursor-pointer hover:scale-110' : 'opacity-30 cursor-not-allowed'
-                }`}
+                className={`absolute ${capaPositions[i]} flex flex-col items-center transition-all ${!isAvailable ? 'opacity-30' : ''}`}
               >
-                <div className={`w-10 h-10 border-2 bg-black flex items-center justify-center text-xl relative transition-all ${
-                  isSelected ? 'border-white shadow-[0_0_12px_rgba(246,147,34,0.9)]' : 'border-cyber-orange'
-                }`}>
-                  <span>{capa.emoji}</span>
-                  {isSelected && (
-                    <div className="absolute -top-6 text-[8px] bg-cyber-orange text-black px-1 font-bold">ACTIVA</div>
-                  )}
-                  {count > 0 && (
-                    <div className="absolute -top-2 -right-2 w-4 h-4 bg-red-600 text-white text-[7px] font-bold rounded-full flex items-center justify-center">{count}</div>
-                  )}
-                </div>
-                <div className="text-[7px] text-center mt-1 uppercase font-bold leading-tight">
-                  Capa {capa.level}:<br />{capa.label}<br /><span className="opacity-60">({capa.sublabel})</span>
-                </div>
-              </button>
+                <button
+                  onClick={() => { if (isAvailable) { setSelectedCapa(isSelected ? null : capa.level); setSelectedEntry(null); setAlexMsg(''); } }}
+                  title={isAvailable ? `Ver evidencias de Capa ${capa.level}` : 'Capa no desbloqueada'}
+                  disabled={!isAvailable}
+                  className={`flex flex-col items-center transition-all ${isAvailable ? 'cursor-pointer hover:scale-110' : 'cursor-not-allowed'}`}
+                >
+                  <div className={`w-10 h-10 border-2 bg-black flex items-center justify-center text-xl relative transition-all ${
+                    isSelected ? 'border-white shadow-[0_0_12px_rgba(246,147,34,0.9)]' : 'border-cyber-orange'
+                  }`}>
+                    <span>{capa.emoji}</span>
+                    {isSelected && (
+                      <div className="absolute -top-6 text-[8px] bg-cyber-orange text-black px-1 font-bold">ACTIVA</div>
+                    )}
+                    {count > 0 && (
+                      <div className="absolute -top-2 -right-2 w-4 h-4 bg-red-600 text-white text-[7px] font-bold rounded-full flex items-center justify-center">{count}</div>
+                    )}
+                  </div>
+                  <div className="text-[7px] text-center mt-1 uppercase font-bold leading-tight">
+                    Capa {capa.level}:<br />{capa.label}<br /><span className="opacity-60">({capa.sublabel})</span>
+                  </div>
+                </button>
+                {isAvailable && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setManualCapa(capa.level); }}
+                    title={`Manual: cómo penalizar ${capa.label}`}
+                    className="mt-1 w-7 h-7 border border-cyber-orange/60 bg-black hover:bg-cyber-orange hover:text-black text-cyber-orange text-[13px] flex items-center justify-center transition-all"
+                  >
+                    📖
+                  </button>
+                )}
+              </div>
             );
           })}
 
@@ -919,6 +1100,7 @@ const InvestigationMap = ({ cataloguedLog, currentLevel }: { cataloguedLog: Cata
         <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[7px] opacity-50 text-center w-16 uppercase font-bold leading-tight">
           Foros<br />Centrales
         </div>
+
       </section>
 
       {/* Right panel: layer details */}
@@ -965,7 +1147,11 @@ const InvestigationMap = ({ cataloguedLog, currentLevel }: { cataloguedLog: Cata
                           <button
                             key={idx}
                             onClick={() => {
-                              const msg = `ALEX: He rastreado al usuario @${selectedEntry.author} y se ha notificado la pena posible: "${opt.label}". ${opt.detail} El caso ha sido registrado en el sistema para seguimiento judicial.`;
+                              const isPrison = opt.label.toLowerCase().includes('prisión');
+                              if (isPrison) {
+                                addSuspect(selectedEntry.evidenceId);
+                              }
+                              const msg = `ALEX: Se ha notificado la pena posible: "${opt.label}". ${opt.detail} El caso ha sido registrado en el sistema para seguimiento judicial.`;
                               setAlexMsg(msg);
                               setPenalizedIds(prev => [...prev, selectedEntry.evidenceId]);
                               const next = visibleLog.filter(e => e.evidenceId !== selectedEntry.evidenceId);
@@ -1000,6 +1186,36 @@ const InvestigationMap = ({ cataloguedLog, currentLevel }: { cataloguedLog: Cata
                     ))}
                   </ul>
                 </div>
+                {/* Level culprits summary */}
+                {levelCulprits.filter(c => c.revealed).length > 0 && (
+                  <div className="border-t border-black pt-2 space-y-1">
+                    <p className="font-bold uppercase text-red-700 border-b border-red-300 pb-1 mb-2">⚖ Culpables Identificados</p>
+                    {levelCulprits.filter(c => c.revealed).map(c => (
+                      <div key={c.evidenceId} className="bg-red-50 border border-red-300 p-1 rounded text-[10px]">
+                        <span className="font-bold text-red-800">{c.fullName}</span> <span className="text-gray-500">(@{c.author})</span> · {c.crimeType} · edad {c.age}
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => {
+                        const revealed = levelCulprits.filter(c => c.revealed);
+                        const topCulprit = [...revealed].sort((a, b) => b.level - a.level)[0];
+                        const allNames = revealed.map(c => `${c.fullName} (@${c.author}, ${c.crimeType})`).join('; ');
+                        setAlexMsg(
+                          `DETECTIVE ALEX: Análisis completado. Los sospechosos identificados son: ${allNames}. El perfil más peligroso identificado es ${topCulprit.fullName} (@${topCulprit.author}) con delito de ${topCulprit.crimeType} en el nivel ${topCulprit.level}. Recomiendo enfocar el veredicto final en este perfil.`
+                        );
+                      }}
+                      className="mt-1 w-full bg-amber-700 hover:bg-amber-600 text-white text-[10px] py-1 px-2 uppercase font-bold tracking-wide"
+                    >
+                      🔍 Consultar al Detective Alex
+                    </button>
+                    {alexMsg && (
+                      <div className="bg-amber-50 border-l-4 border-amber-500 p-2 rounded mt-1">
+                        <p className="text-[10px] font-bold text-amber-700 mb-1">🔍 DETECTIVE ALEX</p>
+                        <p className="text-[11px] text-amber-900 leading-snug">{alexMsg}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <p className="text-gray-500 italic">Haz clic en una capa del mapa para filtrar las evidencias.</p>
               </div>
             )}
@@ -1010,28 +1226,90 @@ const InvestigationMap = ({ cataloguedLog, currentLevel }: { cataloguedLog: Cata
   );
 };
 
-const TacticalBoard = ({ state, acceptBribe, rejectBribe }: {
+const CRIME_FILES: { level: number; emoji: string; label: string; article: string; color: string }[] = [
+  { level: 1, emoji: '💬', label: 'Injuria', article: 'Art. 220', color: 'border-yellow-500' },
+  { level: 2, emoji: '📢', label: 'Calumnia', article: 'Art. 221', color: 'border-blue-500' },
+  { level: 3, emoji: '👤', label: 'Suplantación', article: 'Ley 1273/09', color: 'border-purple-500' },
+  { level: 4, emoji: '⚠️', label: 'Amenazas/Hostig.', article: 'Art. 347/134B', color: 'border-red-500' },
+  { level: 5, emoji: '🕵️', label: 'Concierto', article: 'Art. 340', color: 'border-white' },
+];
+
+const TacticalBoard = ({ state, acceptBribe, rejectBribe, jailCulprit, dismissCulprit }: {
   state: GameState;
   acceptBribe: () => void;
   rejectBribe: () => void;
-}) => (
-  <div className="flex-1 grid grid-cols-12 gap-2 overflow-hidden py-2 h-full min-h-0">
+  jailCulprit: (evidenceId: string) => void;
+  dismissCulprit: (evidenceId: string) => void;
+}) => {
+  const [selectedFile, setSelectedFile] = useState<number | null>(null);
+  const [selectedCulpritId, setSelectedCulpritId] = useState<string | null>(null);
+  const [newSuspectAlert, setNewSuspectAlert] = useState<string | null>(null);
+  const prevCulpritCountRef = React.useRef(state.levelCulprits.length);
+
+  // Show notification when a new suspect is added
+  useEffect(() => {
+    if (state.levelCulprits.length > prevCulpritCountRef.current) {
+      const newest = state.levelCulprits[state.levelCulprits.length - 1];
+      if (newest.revealed) {
+        setNewSuspectAlert(`🚨 Nuevo sospechoso identificado: ${newest.fullName} (@${newest.author}) — ${newest.crimeType}`);
+        const timer = setTimeout(() => setNewSuspectAlert(null), 8000);
+        return () => clearTimeout(timer);
+      }
+    }
+    prevCulpritCountRef.current = state.levelCulprits.length;
+  }, [state.levelCulprits.length]);
+
+  // Map level → day range: level 1 = days 1-2, level 2 = days 3-4, etc.
+  const getDaysForLevel = (lv: number) => [(lv - 1) * 2 + 1, (lv - 1) * 2 + 2];
+
+  // Bribes filtered by selected file's days
+  const filteredBribes = selectedFile !== null
+    ? (() => {
+        const [d1, d2] = getDaysForLevel(selectedFile);
+        return state.bribeHistory.filter(b => b.day === d1 || b.day === d2);
+      })()
+    : state.bribeHistory;
+
+  const selectedFileInfo = selectedFile !== null ? CRIME_FILES.find(f => f.level === selectedFile) : null;
+
+  return (
+  <div className="flex-1 grid grid-cols-12 gap-2 overflow-hidden py-2 h-full min-h-0 relative">
+    {/* Suspect notification banner */}
+    <AnimatePresence>
+      {newSuspectAlert && (
+        <motion.div
+          initial={{ opacity: 0, y: -30 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -30 }}
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-red-900 border-2 border-red-500 px-6 py-2 text-red-100 text-[11px] font-bold uppercase tracking-wider shadow-lg shadow-red-500/30 max-w-lg text-center"
+        >
+          {newSuspectAlert}
+          <button onClick={() => setNewSuspectAlert(null)} className="ml-3 text-red-300 hover:text-white text-[10px]">✕</button>
+        </motion.div>
+      )}
+    </AnimatePresence>
     {/* Left Panel: Bribe History */}
     <aside className="col-span-3 flex flex-col h-full min-h-0">
       <section className="flex-1 bg-black border-2 border-cyber-orange/30 flex flex-col h-full min-h-0 overflow-hidden">
         <div className="flex justify-between items-center px-2 py-1 bg-cyber-orange/10 shrink-0">
-          <span className="text-[10px] font-bold uppercase tracking-widest">Sobornos Pendientes</span>
-          <span className="text-[10px] text-cyber-orange/60">{state.bribeHistory.filter(b => b.status === 'pending').length} activo(s)</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest">
+            {selectedFileInfo ? `Sobornos — ${selectedFileInfo.label}` : 'Sobornos Pendientes'}
+          </span>
+          <span className="text-[10px] text-cyber-orange/60">{filteredBribes.filter(b => b.status === 'pending').length} activo(s)</span>
         </div>
 
+        {selectedFile !== null && (
+          <button onClick={() => setSelectedFile(null)} className="text-[9px] text-cyber-orange underline px-2 py-1 text-left shrink-0">← Ver todos</button>
+        )}
+
         <div className="flex-1 overflow-y-auto p-2 space-y-2">
-          {state.bribeHistory.length === 0 && (
+          {filteredBribes.length === 0 && (
             <div className="text-[10px] text-cyber-orange/40 italic text-center mt-6">
-              Sin sobornos registrados aún.
+              {selectedFile !== null ? 'Sin sobornos registrados para este delito.' : 'Sin sobornos registrados aún.'}
             </div>
           )}
 
-          {state.bribeHistory.map((bribe, i) => (
+          {filteredBribes.map((bribe, i) => (
             <div
               key={i}
               className={`border p-2 text-[10px] ${
@@ -1079,49 +1357,89 @@ const TacticalBoard = ({ state, acceptBribe, rejectBribe }: {
         {/* Summary footer */}
         <div className="shrink-0 border-t border-cyber-orange/20 px-2 py-1 text-[9px] text-cyber-orange/60 flex justify-between">
           <span>Integridad: <span className={state.integrity < 50 ? 'text-red-400' : 'text-green-400'}>{state.integrity}%</span></span>
-          <span>Total ofrecido: ${state.bribeHistory.reduce((s, b) => s + b.amount, 0)}</span>
+          <span>Total ofrecido: ${filteredBribes.reduce((s, b) => s + b.amount, 0)}</span>
         </div>
       </section>
     </aside>
 
     <main className="col-span-6 bg-[#5d3a1a] border-[12px] border-[#3d2a1a] shadow-inner relative overflow-hidden flex flex-col p-0">
-      {/* Top bar now extends fully down, no black gap */}
       <div className="bg-[#3d2a1a] text-white px-4 py-1 text-[10px] font-bold flex items-center justify-between uppercase !rounded-none !mb-0">
-        <span>▼ Pizarrón Táctico Completo - NetCity Investigation</span>
+        <span>▼ Pizarrón Táctico — Expedientes del Caso</span>
       </div>
-      <div className="flex-1 p-6 relative">
-        {/* Red String Connections (Visual) */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
-          <line x1="100" y1="100" x2="300" y2="80" stroke="red" strokeWidth="2" />
-          <line x1="200" y1="150" x2="350" y2="150" stroke="red" strokeWidth="2" />
-          <line x1="350" y1="150" x2="450" y2="250" stroke="red" strokeWidth="2" />
+      <div className="flex-1 p-4 relative overflow-hidden">
+        {/* Red string connections between files */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+          {CRIME_FILES.filter(f => f.level <= state.level).map((f, i, arr) => {
+            if (i === 0) return null;
+            const cols = Math.min(3, arr.length);
+            const prevRow = Math.floor((i - 1) / cols);
+            const prevCol = (i - 1) % cols;
+            const curRow = Math.floor(i / cols);
+            const curCol = i % cols;
+            const px = 60 + prevCol * 170 + 55;
+            const py = 20 + prevRow * 180 + 60;
+            const cx = 60 + curCol * 170 + 55;
+            const cy = 20 + curRow * 180 + 60;
+            return <line key={i} x1={px} y1={py} x2={cx} y2={cy} stroke="red" strokeWidth="1.5" opacity="0.5" />;
+          })}
         </svg>
 
-        <div className="absolute top-10 left-10 w-32 h-40 bg-white border border-gray-400 p-2 shadow-lg -rotate-3 z-20">
-          <div className="h-1 bg-red-800 mb-2"></div>
-          <p className="text-[7px] text-gray-800 leading-tight uppercase">Calumnia (Art. 222)<br />Libertad del buen nombre mediante ofensas directas Denuncia</p>
-          <div className="mt-4 border-2 border-red-500 text-center text-[10px] font-bold text-red-500 p-1">INJURIA</div>
+        {/* Crime file folders */}
+        <div className="relative z-10 flex flex-wrap gap-6 justify-center items-start pt-2">
+          {CRIME_FILES.map(file => {
+            const isUnlocked = file.level <= state.level;
+            const isSelected = selectedFile === file.level;
+            const evidenceCount = state.cataloguedLog.filter(e => {
+              const [d1, d2] = getDaysForLevel(file.level);
+              return e.day === d1 || e.day === d2;
+            }).length;
+            const bribeCount = (() => {
+              const [d1, d2] = getDaysForLevel(file.level);
+              return state.bribeHistory.filter(b => b.day === d1 || b.day === d2).length;
+            })();
+
+            return (
+              <button
+                key={file.level}
+                onClick={() => { if (isUnlocked) setSelectedFile(isSelected ? null : file.level); }}
+                disabled={!isUnlocked}
+                className={`w-[130px] flex flex-col items-center transition-all ${
+                  isUnlocked ? 'cursor-pointer hover:scale-105' : 'opacity-25 cursor-not-allowed'
+                }`}
+                style={{ transform: isUnlocked ? `rotate(${(file.level % 2 === 0 ? 2 : -2)}deg)` : undefined }}
+              >
+                {/* Folder card */}
+                <div className={`w-full bg-white border-2 ${isSelected ? file.color + ' shadow-lg shadow-white/20' : 'border-gray-400'} p-2 relative transition-all`}>
+                  {/* Folder tab */}
+                  <div className={`absolute -top-3 left-2 w-12 h-3 border-t-2 border-l-2 border-r-2 bg-white ${isSelected ? file.color : 'border-gray-400'}`}></div>
+                  <div className="text-center mt-1">
+                    <span className="text-2xl">{file.emoji}</span>
+                  </div>
+                  <div className="text-center mt-1">
+                    <p className="text-[9px] font-black uppercase text-gray-800">{file.label}</p>
+                    <p className="text-[7px] text-gray-500 uppercase">{file.article} · Nv.{file.level}</p>
+                  </div>
+                  <div className="flex justify-between mt-2 text-[7px] text-gray-500 border-t border-gray-300 pt-1">
+                    <span>{evidenceCount} evidencias</span>
+                    <span>{bribeCount} sobornos</span>
+                  </div>
+                  {isSelected && (
+                    <div className="absolute -top-5 right-0 bg-red-600 text-white text-[7px] px-1 py-0.5 font-bold uppercase">Abierto</div>
+                  )}
+                  {!isUnlocked && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                      <span className="text-white text-lg">🔒</span>
+                    </div>
+                  )}
+                </div>
+                <div className="w-4 h-4 bg-red-700 rounded-full mt-1 border border-red-900 shadow-sm" title="Pin"></div>
+              </button>
+            );
+          })}
         </div>
 
-        <div className="absolute top-20 left-48 w-16 h-20 bg-white p-1 shadow-md z-20 border border-gray-300">
-          <img
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDB_2S5DYrjA9ZYHAo6KMUF_yJPF0sAAMcsTSeMRgC3Awh_luQTL58EG2mD7lHvdQQugyaU3nHXcQN8AKhbWFU9Ps9OPSgNag8nHoERi-O9J6OGw-_fpNLnALbkk5YZqucnagnugsBKY5Ek64QN_Fkb719pgDqYJHtMuM7PVrLSk7JzzsLXB9GDzzrFG4on0oYYBCBYPFftl5wMkkITbJuOqpDfykqByuOby3ojAID9TaGAr-J3Zit9Y8ME4WWQu86AE1F2gvOnDIM"
-            alt="Suspect"
-            className="w-full h-full object-cover grayscale"
-            referrerPolicy="no-referrer"
-          />
-        </div>
-
-        <div className="absolute top-10 left-80 w-24 h-24 bg-black/80 border-2 border-cyber-orange flex flex-col items-center justify-center text-cyber-orange p-1 z-30">
-          <div className="text-lg">💬</div>
-          <div className="text-[8px] text-center font-bold uppercase">ID: 001<br />Injuria (Art. 220)</div>
-        </div>
-
-        <div className="absolute top-44 left-10 bg-yellow-200 p-2 w-36 text-[9px] font-bold z-40 text-black shadow-md -rotate-1">
-          ¡IP de anon_7834 rastreada a NetCity Central!
-        </div>
-
-        <div className="absolute bottom-4 left-4 right-4 bg-black/40 border border-white/20 p-2 flex items-center justify-around h-12 backdrop-blur-sm">
+        {/* Bottom bar */}
+        <div className="absolute bottom-4 left-4 right-4 bg-black/40 border border-white/20 p-2 flex items-center justify-around h-10 backdrop-blur-sm z-10">
           <div className="text-[8px] text-white flex flex-col items-center">
             <div className="w-2 h-2 bg-cyber-orange mb-1"></div>
             NetCity Central
@@ -1141,34 +1459,119 @@ const TacticalBoard = ({ state, acceptBribe, rejectBribe }: {
     </main>
 
     <aside className="col-span-3 flex flex-col gap-2">
-      <section className="bg-paper-bg text-black p-4 retro-border relative h-1/2 overflow-hidden">
-        <div className="absolute top-0 right-0 bg-black text-cyber-orange px-2 py-1 text-[8px] font-bold uppercase">Capa Actual</div>
-        <h2 className="text-lg font-bold mb-2 mt-4 underline uppercase">Las Primeras Señales</h2>
-        <div className="text-[10px] space-y-3">
-          <p><strong>SITUACIÓN:</strong> Valeria comienza a recibir mensajes ofensivos en redes sociales. Parecen bromas aisladas pero se repiten.</p>
-          <div>
-            <p className="font-bold border-b border-black inline-block mb-1 uppercase">Objetivos:</p>
-            <ul className="list-disc list-inside">
-              <li>Recolectar capturas</li>
-              <li>Identificar usuario</li>
-              <li>Clasificar agresión</li>
-            </ul>
-          </div>
+      {/* TOP: Culprits list */}
+      <section className="bg-paper-bg text-black p-3 retro-border relative h-1/2 overflow-hidden flex flex-col">
+        <div className="absolute top-0 right-0 bg-black text-cyber-orange px-2 py-1 text-[8px] font-bold uppercase">Sospechosos</div>
+        <h2 className="text-sm font-bold mb-2 mt-4 underline uppercase">Expediente de Sospechosos</h2>
+        <div className="flex-1 overflow-y-auto space-y-2">
+          {state.levelCulprits.length === 0 && (
+            <p className="text-[9px] italic text-gray-500 mt-4 text-center">Aún no se han identificado sospechosos. Aplica una pena de prisión en el Mapa de Investigación para identificarlos.</p>
+          )}
+          {state.levelCulprits.map(c => {
+            const isSelected = selectedCulpritId === c.evidenceId;
+            const fileInfo = CRIME_FILES.find(f => f.level === c.level);
+
+            // Revealed culprit — full name shown
+            return (
+              <div key={c.evidenceId}
+                className={`border-2 p-2 cursor-pointer transition-all ${
+                  c.verdict === 'jailed' ? 'border-red-700 bg-red-100' :
+                  c.verdict === 'dismissed' ? 'border-gray-400 bg-gray-200 opacity-60' :
+                  isSelected ? 'border-yellow-600 bg-yellow-50 shadow-md' :
+                  'border-gray-400 bg-white hover:bg-yellow-50'
+                }`}
+                onClick={() => setSelectedCulpritId(isSelected ? null : c.evidenceId)}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-[10px] uppercase">{fileInfo?.emoji} {c.fullName}</span>
+                    <p className="text-[7px] text-gray-500">Usuario: {c.author}</p>
+                  </div>
+                  <span className={`text-[7px] font-bold uppercase px-1 py-0.5 ${
+                    c.verdict === 'jailed' ? 'bg-red-700 text-white' :
+                    c.verdict === 'dismissed' ? 'bg-gray-500 text-white' :
+                    'bg-yellow-500 text-black'
+                  }`}>
+                    {c.verdict === 'jailed' ? '🔒 PRESO' : c.verdict === 'dismissed' ? '✗ DESESTIMADO' : '⏳ PENDIENTE'}
+                  </span>
+                </div>
+                <p className="text-[8px] text-gray-600">Nv.{c.level} · {c.crimeType} · Edad: {c.age}</p>
+                {isSelected && c.verdict === 'pending' && (
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); jailCulprit(c.evidenceId); }}
+                      className="flex-1 bg-red-800 text-white text-[8px] font-bold uppercase py-1 border border-red-900 hover:bg-red-700 transition-colors"
+                    >🔒 Enviar a Cárcel</button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); dismissCulprit(c.evidenceId); }}
+                      className="flex-1 bg-gray-600 text-white text-[8px] font-bold uppercase py-1 border border-gray-700 hover:bg-gray-500 transition-colors"
+                    >✗ Desestimar</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
+
+      {/* BOTTOM: Parent bribe email */}
       <section className="flex-1 bg-black border-2 border-cyber-orange/20 p-2 overflow-hidden flex flex-col">
         <div className="flex justify-between items-center mb-2 bg-cyber-orange/10 px-2">
-          <span className="text-[8px] font-bold uppercase">Resumen Global</span>
+          <span className="text-[8px] font-bold uppercase">📧 Correo del Padre</span>
         </div>
-        <div className="flex-1 bg-orange-50 text-orange-950 p-4 font-bold text-[10px] leading-relaxed border-4 border-double border-orange-900">
-          <p>Investigación activa para desentrañar el acoso coordinado contra Valeria.</p>
-          <p className="mt-4">Múltiples pistas y delitos identificados.</p>
-          <p className="mt-4">Seguir el Árbol de la Verdad.</p>
-        </div>
+        {(() => {
+          const culprit = selectedCulpritId !== null
+            ? state.levelCulprits.find(c => c.evidenceId === selectedCulpritId)
+            : null;
+          const [d1, d2] = culprit ? getDaysForLevel(culprit.level) : [0, 0];
+          const bribe = state.bribeHistory.find(b => b.day === d1 || b.day === d2);
+
+          if (!culprit || !culprit.revealed) return (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-[9px] text-cyber-orange/40 italic text-center px-4">Selecciona un sospechoso identificado arriba para ver el correo de soborno de su padre.</p>
+            </div>
+          );
+
+          if (!bribe) return (
+            <div className="flex-1 bg-gray-900/60 border border-cyber-orange/10 p-3 flex flex-col justify-center">
+              <p className="text-[10px] text-cyber-orange/60 italic text-center">No se registró un soborno durante la investigación del nivel {culprit.level} ({culprit.crimeType}).</p>
+            </div>
+          );
+
+          return (
+            <div className="flex-1 overflow-y-auto">
+              <div className="bg-gray-900 border border-cyber-orange/30 p-3 space-y-2">
+                {/* Email header */}
+                <div className="border-b border-cyber-orange/20 pb-2 space-y-1">
+                  <p className="text-[9px] text-cyber-orange/60"><span className="font-bold text-cyber-orange">De:</span> padre_de_{culprit.author.toLowerCase()}@netcity.com</p>
+                  <p className="text-[9px] text-cyber-orange/60"><span className="font-bold text-cyber-orange">Para:</span> detective_{state.playerName.toLowerCase() || 'anon'}@fiscalia.net</p>
+                  <p className="text-[9px] text-cyber-orange/60"><span className="font-bold text-cyber-orange">Asunto:</span> RE: Caso Nv.{culprit.level} — Solicitud URGENTE</p>
+                </div>
+                {/* Email body */}
+                <div className="text-[9px] text-cyber-orange/80 leading-relaxed space-y-2">
+                  <p>Estimado/a Detective,</p>
+                  <p>Le escribo como padre de <span className="font-bold text-cyber-orange">{culprit.fullName}</span> (usuario "{culprit.author}", {culprit.age} años). Mi hijo/a fue señalado/a en su investigación por un caso de <span className="font-bold text-yellow-400">{culprit.crimeType}</span>.</p>
+                  <p>Entiendo que usted tiene presiones, y quiero facilitarle las cosas. Le ofrezco <span className="font-bold text-green-400">${bribe.amount}</span> para que reconsidere la participación de mi hijo/a en este expediente.</p>
+                  <p className="italic text-cyber-orange/50">"Nadie tiene que saber. Solo retire el nombre y todos ganamos."</p>
+                </div>
+                {/* Bribe status */}
+                <div className={`mt-2 border-t border-cyber-orange/20 pt-2 text-[9px] font-bold uppercase text-center ${
+                  bribe.status === 'pending' ? 'text-yellow-400' :
+                  bribe.status === 'accepted' ? 'text-red-400' : 'text-green-400'
+                }`}>
+                  {bribe.status === 'pending' && '⏳ SOBORNO PENDIENTE — Decide en el panel izquierdo'}
+                  {bribe.status === 'accepted' && '✗ SOBORNO ACEPTADO — Integridad comprometida'}
+                  {bribe.status === 'rejected' && '✓ SOBORNO RECHAZADO — Integridad intacta'}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </section>
     </aside>
   </div>
 );
+};
 
 // --- Level metadata ---
 
@@ -1355,6 +1758,9 @@ export default function App() {
     acknowledgeAlexAlert,
     acceptBribe,
     rejectBribe,
+    jailCulprit,
+    dismissCulprit,
+    addSuspect,
     submitFinalVerdict,
     saveGame,
     loadGame,
@@ -1406,11 +1812,56 @@ export default function App() {
     }
   }, [isMuted, isVoiceEnabled]);
 
+  // ── Keyboard navigation — crime classification only ──
+  // Arrow Up/Down cycle through crime-type buttons; Enter selects, double-Enter classifies.
+  useEffect(() => {
+    const getCrimeBtns = (): HTMLElement[] =>
+      Array.from(document.querySelectorAll<HTMLElement>('[data-crime-btn]'));
+
+    const handleKeyNav = (e: KeyboardEvent) => {
+      if (screen !== 'case-tree') return;
+
+      const btns = getCrimeBtns();
+      if (btns.length === 0) return;
+
+      const cur = btns.indexOf(document.activeElement as HTMLElement);
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const next = cur < btns.length - 1 ? cur + 1 : 0;
+        btns[next].focus();
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const prev = cur > 0 ? cur - 1 : btns.length - 1;
+        btns[prev].focus();
+      } else if (e.key === 'Enter') {
+        // If a crime button is focused…
+        if (cur !== -1) {
+          e.preventDefault();
+          const crimeKey = btns[cur].getAttribute('data-crime-btn') || '';
+          if (selectedCrime === crimeKey) {
+            // Second Enter on already-selected crime → classify
+            handleClassify();
+          } else {
+            // First Enter → select this crime type
+            btns[cur].click();
+          }
+        }
+      } else if (e.key === 'Escape') {
+        (document.activeElement as HTMLElement)?.blur();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyNav);
+    return () => window.removeEventListener('keydown', handleKeyNav);
+  }, [screen, selectedCrime]);
+
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const buttonAudioRef = React.useRef<HTMLAudioElement | null>(null);
   const avlFlashTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const treeScrollRef = React.useRef<HTMLDivElement | null>(null);
   const [treeOffset, setTreeOffset] = useState({ x: 0, y: 0 });
+  const [treeScale, setTreeScale] = useState(1);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const treeDragState = React.useRef({ active: false, startX: 0, startY: 0, startOffsetX: 0, startOffsetY: 0 });
 
@@ -1504,7 +1955,7 @@ export default function App() {
 
   // Preload button sound
   useEffect(() => {
-    buttonAudioRef.current = new Audio('/Botones.mp3');
+    buttonAudioRef.current = new Audio('/sounds/Botones.mp3');
     buttonAudioRef.current.volume = 0.45;
   }, []);
 
@@ -1554,22 +2005,44 @@ export default function App() {
     }
   };
 
-  const renderTreeNode = (node: GameNode | null, x: number, y: number, level: number): React.ReactNode => {
+  // Compute positions for every node using a proper binary-tree layout:
+  // the horizontal range available to each subtree is split in half at every level,
+  // so siblings can never overlap regardless of depth.
+  const computeTreeLayout = (root: GameNode | null): Map<string, { x: number; y: number }> => {
+    const pos = new Map<string, { x: number; y: number }>();
+    if (!root) return pos;
+    const depth = getTreeDepth(root);
+    const leafSlot = 64; // px per leaf slot (node width + spacing)
+    const totalWidth = Math.max(700, Math.pow(2, depth) * leafSlot);
+    const vGap = 90;
+    const layout = (node: GameNode | null, level: number, left: number, right: number) => {
+      if (!node) return;
+      pos.set(node.id, { x: (left + right) / 2, y: level * vGap + 40 });
+      const mid = (left + right) / 2;
+      layout(node.left,  level + 1, left, mid);
+      layout(node.right, level + 1, mid,  right);
+    };
+    layout(root, 0, 0, totalWidth);
+    return pos;
+  };
+
+  const renderTreeNode = (node: GameNode | null, positions: Map<string, { x: number; y: number }>): React.ReactNode => {
     if (!node) return null;
-    const offset = 120 / (level + 1);
+    const pos = positions.get(node.id);
+    if (!pos) return null;
+    const { x, y } = pos;
+    const leftPos  = node.left  ? positions.get(node.left.id)  : null;
+    const rightPos = node.right ? positions.get(node.right.id) : null;
     return (
       <React.Fragment key={node.id}>
-        {/* Lines to children */}
-        {node.left && (
-          <line x1={x} y1={y} x2={x - offset} y2={y + 60}
+        {leftPos && (
+          <line x1={x} y1={y} x2={leftPos.x} y2={leftPos.y}
             stroke="#f69322" strokeWidth="1" strokeDasharray="2,2" opacity="0.5" />
         )}
-        {node.right && (
-          <line x1={x} y1={y} x2={x + offset} y2={y + 60}
+        {rightPos && (
+          <line x1={x} y1={y} x2={rightPos.x} y2={rightPos.y}
             stroke="#f69322" strokeWidth="1" strokeDasharray="2,2" opacity="0.5" />
         )}
-
-        {/* Node — outer g positions; inner motion.g animates entry */}
         <g transform={`translate(${x - 20}, ${y - 20})`}>
           <motion.g
             key={node.id}
@@ -1588,22 +2061,18 @@ export default function App() {
             <text x="20" y="26" textAnchor="middle" fill="#f69322" fontSize="16" fontWeight="bold" fontFamily="VT323, monospace">
               {node.age}
             </text>
-            {selectedNodeId === node.id && (() => {
-              const entry = state.cataloguedLog.find(e => e.evidenceId === node.evidenceId);
-              return entry ? (
-                <g transform="translate(44, -4)">
-                  <rect x="0" y="0" width="124" height="44" fill="black" stroke="#f69322" strokeWidth="1.5" rx="2" />
-                  <text x="6" y="14" fill="#f69322" fontSize="10" fontFamily="VT323, monospace">@{entry.author}</text>
-                  <text x="6" y="30" fill="#f69322" fontSize="10" fontFamily="VT323, monospace">{entry.crimeType.toUpperCase()}</text>
-                </g>
-              ) : null;
-            })()}
           </motion.g>
         </g>
-        {node.left && renderTreeNode(node.left, x - offset, y + 60, level + 1)}
-        {node.right && renderTreeNode(node.right, x + offset, y + 60, level + 1)}
+        {renderTreeNode(node.left,  positions)}
+        {renderTreeNode(node.right, positions)}
       </React.Fragment>
     );
+  };
+
+  const findNodeById = (node: GameNode | null, id: string): GameNode | null => {
+    if (!node) return null;
+    if (node.id === id) return node;
+    return findNodeById(node.left, id) || findNodeById(node.right, id);
   };
 
   return (
@@ -1634,7 +2103,7 @@ export default function App() {
           >
             {screen === 'boot' && <BootScreen onComplete={() => setScreen('intro')} speakSystem={speakSystem} />}
             {screen === 'intro' && <IntroScreen onComplete={(name) => { setPlayerName(name); setScreen('main-menu'); }} speakSystem={speakSystem} speakAlex={speakAlex} />}
-            {screen === 'main-menu' && <MainMenu onNavigate={setScreen} setShowHelp={setShowHelp} setShowSettings={setShowSettings} loadGame={loadGame} playerName={state.playerName} />}
+            {screen === 'main-menu' && <MainMenu onNavigate={(s) => { if (s === 'case-tree') resumeGame(); setScreen(s); }} setShowHelp={setShowHelp} setShowSettings={setShowSettings} loadGame={loadGame} playerName={state.playerName} />}
 
             {screen === 'case-tree' && (
               <div className="flex-1 flex space-x-2 overflow-hidden py-2 h-full">
@@ -1694,33 +2163,82 @@ export default function App() {
                   <div className="retro-border flex-1 flex flex-col bg-black grid-bg relative overflow-hidden">
                     <div className="panel-header">
                       Árbol de la Verdad
-                      <span className="text-[10px] font-normal opacity-60">
+                      <span className="text-[10px] font-normal opacity-60 ml-3">
                         {state.tree ? `${getTreeDepth(state.tree)} niveles` : 'vacío'}
                       </span>
+                      {/* Zoom controls */}
+                      <div className="flex items-center gap-1 ml-auto">
+                        <button
+                          onPointerDown={e => e.stopPropagation()}
+                          onClick={() => setTreeScale(s => Math.min(2, +(s + 0.15).toFixed(2)))}
+                          className="px-2 py-0 border border-cyber-orange text-cyber-orange hover:bg-cyber-orange hover:text-black text-base leading-none"
+                          title="Acercar"
+                        >+</button>
+                        <span className="text-[10px] w-8 text-center">{Math.round(treeScale * 100)}%</span>
+                        <button
+                          onPointerDown={e => e.stopPropagation()}
+                          onClick={() => setTreeScale(s => Math.max(0.2, +(s - 0.15).toFixed(2)))}
+                          className="px-2 py-0 border border-cyber-orange text-cyber-orange hover:bg-cyber-orange hover:text-black text-base leading-none"
+                          title="Alejar"
+                        >−</button>
+                        <button
+                          onPointerDown={e => e.stopPropagation()}
+                          onClick={() => { setTreeScale(1); setTreeOffset({ x: 0, y: 0 }); }}
+                          className="px-2 py-0 border border-cyber-orange/50 text-cyber-orange/60 hover:bg-cyber-orange/20 text-[10px] leading-none"
+                          title="Resetear vista"
+                        >↺</button>
+                      </div>
                     </div>
                     <div
                     ref={treeScrollRef}
-                    className="flex-1 p-4 relative overflow-hidden cursor-grab"
+                    className="flex-1 p-0 relative overflow-hidden cursor-grab"
                     onPointerDown={handleTreePointerDown}
                     onPointerMove={handleTreePointerMove}
                     onPointerUp={endTreeDrag}
                     onPointerLeave={endTreeDrag}
+                    onWheel={(e) => {
+                      e.preventDefault();
+                      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                      setTreeScale(s => Math.min(2, Math.max(0.2, +(s + delta).toFixed(2))));
+                    }}
                   >
-                      {/* SVG height grows with tree depth */}
-                      <svg
-                        className="w-full"
-                        style={{
-                          minHeight: `${Math.max(400, getTreeDepth(state.tree) * 80 + 80)}px`,
-                        }}
-                      >
-                        <g transform={`translate(${300 + treeOffset.x}, ${40 + treeOffset.y})`}>
-                          {state.tree ? renderTreeNode(state.tree, 300, 40, 0) : (
-                            <text x="50%" y="50%" textAnchor="middle" fill="rgba(246,147,34,0.3)" fontSize="12" fontFamily="VT323, monospace">
-                              Esperando inserción de nodos...
-                            </text>
-                          )}
-                        </g>
-                      </svg>
+                      {(() => {
+                        const treeLayout = computeTreeLayout(state.tree);
+                        const depth = getTreeDepth(state.tree);
+                        const leafSlot = 64;
+                        const svgW = Math.max(700, Math.pow(2, depth) * leafSlot);
+                        return (
+                          <svg
+                            width="100%"
+                            height="100%"
+                            style={{ display: 'block', position: 'absolute', inset: 0 }}
+                          >
+                            <g transform={`translate(${treeOffset.x}, ${treeOffset.y}) scale(${treeScale})`}>
+                              {state.tree ? renderTreeNode(state.tree, treeLayout) : (
+                                <text x="50%" y="50%" textAnchor="middle" fill="rgba(246,147,34,0.3)" fontSize="12" fontFamily="VT323, monospace">
+                                  Esperando inserción de nodos...
+                                </text>
+                              )}
+                              {/* Tooltip — rendered last so it floats above all nodes */}
+                              {selectedNodeId && treeLayout.size > 0 && (() => {
+                                const coords = treeLayout.get(selectedNodeId);
+                                const selNode = findNodeById(state.tree, selectedNodeId);
+                                if (!coords || !selNode) return null;
+                                const entry = state.cataloguedLog.find(e => e.evidenceId === selNode.evidenceId);
+                                if (!entry) return null;
+                                return (
+                                  <g transform={`translate(${coords.x + 24}, ${coords.y - 52})`}>
+                                    <rect x="0" y="0" width="150" height="56" fill="black" stroke="#f69322" strokeWidth="1.5" rx="2" />
+                                    <text x="8" y="17" fill="#f69322" fontSize="12" fontFamily="VT323, monospace">@{entry.author}</text>
+                                    <text x="8" y="34" fill="#f69322" fontSize="12" fontFamily="VT323, monospace">{entry.crimeType.toUpperCase()}</text>
+                                    <text x="8" y="49" fill="rgba(246,147,34,0.55)" fontSize="10" fontFamily="VT323, monospace">Día {entry.day} · Nv {entry.level}</text>
+                                  </g>
+                                );
+                              })()}
+                            </g>
+                          </svg>
+                        );
+                      })()}
                     </div>
                     {/* Tree balance flash */}
                     <AnimatePresence>
@@ -1769,16 +2287,19 @@ export default function App() {
                           <div className="bg-cyber-orange/10 border border-cyber-orange p-3">
                             <p className="text-[10px] uppercase opacity-60 mb-1">Evidencia Seleccionada:</p>
                             <p className="text-sm font-bold">"{state.currentEvidence.content}"</p>
-                            <p className="text-[10px] mt-2 italic">Detalle: {state.currentEvidence.details}</p>
                           </div>
                           <div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1 cyber-scroll">
                             {getAvailableCrimeTypes(state.day).map(crime => (
                               <button
                                 key={crime}
+                                data-crime-btn={crime}
                                 onClick={() => setSelectedCrime(crime)}
                                 className={cn(
                                   "w-full text-left p-2 border text-xs transition-all",
-                                  selectedCrime === crime ? "bg-cyber-orange text-black border-white" : "bg-black text-cyber-orange border-cyber-orange/30 hover:border-cyber-orange"
+                                  selectedCrime === crime
+                                    ? "bg-cyber-orange text-black border-cyber-orange shadow-[0_0_12px_rgba(246,147,34,0.5)]"
+                                    : "bg-black text-cyber-orange border-cyber-orange/30 hover:border-cyber-orange",
+                                  "focus-visible:bg-cyber-orange focus-visible:text-black focus-visible:border-cyber-orange"
                                 )}
                               >
                                 <div className="flex justify-between font-bold">
@@ -1823,8 +2344,8 @@ export default function App() {
               </div>
             )}
 
-            {screen === 'investigation-map' && <InvestigationMap cataloguedLog={state.cataloguedLog} currentLevel={state.level} />}
-            {screen === 'tactical-board' && <TacticalBoard state={state} acceptBribe={acceptBribe} rejectBribe={rejectBribe} />}
+            {screen === 'investigation-map' && <InvestigationMap cataloguedLog={state.cataloguedLog} currentLevel={state.level} levelCulprits={state.levelCulprits} addSuspect={addSuspect} />}
+            {screen === 'tactical-board' && <TacticalBoard state={state} acceptBribe={acceptBribe} rejectBribe={rejectBribe} jailCulprit={jailCulprit} dismissCulprit={dismissCulprit} />}
             {screen === 'game-over' && <GameOverScreen reason={state.gameOverReason} onRestart={() => { resetGame(); setScreen('boot'); }} />}
           </motion.div>
         </AnimatePresence>

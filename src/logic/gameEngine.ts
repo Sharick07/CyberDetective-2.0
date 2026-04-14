@@ -285,12 +285,16 @@ export const generateDayEvidences = (day: number, excludeIds: string[], excludeA
       id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
     } while (excludeIds.includes(id));
 
+    const groupTag = template.type === 'Chat'
+      ? `[Grupo de ${300 + Math.floor(Math.random() * 701)} miembros] `
+      : '';
+
     result.push({
       id,
       type: template.type,
       author,
       age,
-      content: `"${author}: ${content}"`,
+      content: `${groupTag}"${author}: ${content}"`,
       timestamp: new Date().toLocaleTimeString(),
       gravity,
       correctCrime: template.crime as any,

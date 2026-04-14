@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GameState, Evidence, CrimeType, CatalogueEntry, BribeRecord } from '../types/game';
+import { GameState, Evidence, CrimeType, CatalogueEntry, BribeRecord, LevelCulprit } from '../types/game';
 import { generateDayEvidences, EVIDENCE_TEMPLATES, AUTHORS, GRAVITY_RANGE, getRandomAge } from './gameEngine';
 import { AVLTree } from './avlTree';
 
@@ -36,7 +36,7 @@ const INITIAL_STATE: GameState = {
   bribeCount: 0,
   pendingBribeOffer: null,
   timeRemaining: 300,
-  timerActive: true,
+  timerActive: false,
   awaitingDayEnd: false,
   messagesGeneratedToday: 0,
   dayEarnings: 0,
@@ -46,6 +46,23 @@ const INITIAL_STATE: GameState = {
   cataloguedLog: [],
   tutorialStep: 0,
   bribeHistory: [],
+  levelCulprits: [],
+};
+
+const SUSPECT_FULL_NAMES = [
+  'Carlos Andrés Méndez', 'Valentina Rojas Pardo', 'Sebastián Duarte Ríos',
+  'Mariana Castillo Vega', 'Diego Alejandro Torres', 'Camila Fernández Ruiz',
+  'Andrés Felipe Moreno', 'Lucía Herrera Pinto', 'Julián Esteban Cárdenas',
+  'Isabella Gómez Salazar', 'Mateo Ramírez Ortiz', 'Daniela Vargas León',
+  'Santiago Ospina Mejía', 'Sofía Restrepo Cruz', 'Nicolás Peña Bravo',
+  'Laura Jiménez Soto', 'Tomás Acevedo Gil', 'Paula Andrea Rincón',
+  'Emilio Zapata Muñoz', 'Gabriela Navarro Díaz',
+];
+
+const pickFullName = (usedNames: string[]): string => {
+  const available = SUSPECT_FULL_NAMES.filter(n => !usedNames.includes(n));
+  const pool = available.length > 0 ? available : SUSPECT_FULL_NAMES;
+  return pool[Math.floor(Math.random() * pool.length)];
 };
 
 export function useGameState() {
@@ -116,12 +133,16 @@ export function useGameState() {
     // Unique ID
     const id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
 
+    const groupTag = template.type === 'Chat'
+      ? `[Grupo de ${300 + Math.floor(Math.random() * 701)} miembros] `
+      : '';
+
     return {
       id,
       type: template.type,
       author,
       age,
-      content: `"${author}: ${content}"`,
+      content: `${groupTag}"${author}: ${content}"`,
       timestamp: formatGameTime(targetGameSeconds),
       gravity,
       correctCrime: template.crime,
@@ -562,6 +583,23 @@ export function useGameState() {
 
     const nextDay = dayTransitionInfo.completedDay + 1;
     const nextLevel = dayTransitionInfo.nextLevel;
+    const completedDay = dayTransitionInfo.completedDay;
+
+    // At the end of every day: carry only the root to the next day/level.
+    // This ensures the tree resets between days, with the root (median-age culprit) persisting.
+    const trimmedTree = state.tree
+      ? { ...state.tree, left: null, right: null, height: 1 }
+      : null;
+
+    const isEndOfLevel = completedDay % 2 === 0;
+
+    // At end-of-level: mark the suspect matching the root node as wasRoot
+    const rootEvidenceId = state.tree?.evidenceId ?? null;
+    const updatedCulprits = isEndOfLevel && rootEvidenceId
+      ? state.levelCulprits.map(c =>
+          c.evidenceId === rootEvidenceId ? { ...c, wasRoot: true } : c
+        )
+      : state.levelCulprits;
 
     // Generate evidences for the new day, excluding already processed IDs
     const excludeAge = state.rootAgeExclusionRemaining > 0 ? state.rootAgeExclusionAge : null;
@@ -584,6 +622,8 @@ export function useGameState() {
       money: dayTransitionInfo.moneyAfter,
       day: nextDay,
       level: nextLevel,
+      tree: trimmedTree,
+      levelCulprits: updatedCulprits,
       evidenceCollected: newEvidences,
       currentEvidence: newEvidences[0] || null,
       timeRemaining: 300,
@@ -634,6 +674,30 @@ export function useGameState() {
     setTimedMessage('Has rechazado el soborno. Integridad +5%. Valeria puede confiar en ti.');
   };
 
+  const jailCulprit = (evidenceId: string) => {
+    const culprit = state.levelCulprits.find(c => c.evidenceId === evidenceId);
+    setState(prev => ({
+      ...prev,
+      integrity: Math.min(100, prev.integrity + 5),
+      levelCulprits: prev.levelCulprits.map(c =>
+        c.evidenceId === evidenceId ? { ...c, verdict: 'jailed' as const } : c
+      ),
+    }));
+    setTimedMessage(`Sospechoso ${culprit?.fullName ?? ''} enviado a prisión. Integridad +5%.`);
+  };
+
+  const dismissCulprit = (evidenceId: string) => {
+    const culprit = state.levelCulprits.find(c => c.evidenceId === evidenceId);
+    setState(prev => ({
+      ...prev,
+      integrity: Math.max(0, prev.integrity - 10),
+      levelCulprits: prev.levelCulprits.map(c =>
+        c.evidenceId === evidenceId ? { ...c, verdict: 'dismissed' as const } : c
+      ),
+    }));
+    setTimedMessage(`Sospechoso ${culprit?.fullName ?? ''} desestimado del caso. Integridad -10%.`);
+  };
+
   const submitFinalVerdict = (isGuilty: boolean) => {
     if (isGuilty) {
       if (state.hasAcceptedBribe) {
@@ -659,6 +723,36 @@ export function useGameState() {
         gameOverType: 'veredicto',
       }));
     }
+  };
+
+  // Add suspect — called from Investigation Map when a prison penalty is applied
+  const addSuspect = (evidenceId: string) => {
+    // Don't add duplicate
+    if (state.levelCulprits.some(c => c.evidenceId === evidenceId)) return;
+    const entry = state.cataloguedLog.find(e => e.evidenceId === evidenceId);
+    if (!entry) return;
+    const newCulprit: LevelCulprit = {
+      level: entry.level,
+      author: entry.author,
+      fullName: pickFullName(state.levelCulprits.map(c => c.fullName)),
+      age: 0, // age not stored in CatalogueEntry; will be filled from evidence below
+      crimeType: entry.crimeType,
+      evidenceId: entry.evidenceId,
+      verdict: 'pending',
+      revealed: true,
+      wasRoot: false,
+    };
+    // Try to get age from the tree or default
+    const findAge = (node: any): number => {
+      if (!node) return 18;
+      if (node.evidenceId === evidenceId) return node.age;
+      return findAge(node.left) || findAge(node.right);
+    };
+    newCulprit.age = findAge(state.tree) || 18;
+    setState(prev => ({
+      ...prev,
+      levelCulprits: [...prev.levelCulprits, newCulprit],
+    }));
   };
 
   const acknowledgeAlexAlert = () => {
@@ -723,6 +817,9 @@ export function useGameState() {
     acknowledgeAlexAlert,
     acceptBribe,
     rejectBribe,
+    jailCulprit,
+    dismissCulprit,
+    addSuspect,
     submitFinalVerdict,
     resetGame,
     saveGame,

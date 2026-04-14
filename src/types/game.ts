@@ -39,6 +39,18 @@ export interface BribeRecord {
   status: 'pending' | 'accepted' | 'rejected';
 }
 
+export interface LevelCulprit {
+  level: number;
+  author: string;
+  fullName: string;
+  age: number;
+  crimeType: CrimeType;
+  evidenceId: string;
+  verdict: 'pending' | 'jailed' | 'dismissed';
+  revealed: boolean;
+  wasRoot: boolean;
+}
+
 export interface GameState {
   playerName: string;
   day: number;               // 1-10
@@ -67,6 +79,7 @@ export interface GameState {
   cataloguedLog: CatalogueEntry[];        // all evidences inserted into the tree (with day/level)
   tutorialStep: number;                   // 0=not started, 1=intro shown, 2=nav shown
   bribeHistory: BribeRecord[];            // log of all bribe offers
+  levelCulprits: LevelCulprit[];          // root node recorded at end of each level
 }
 
 export const CRIME_INFO: Record<CrimeType, { article: string; description: string; requirements: string[] }> = {

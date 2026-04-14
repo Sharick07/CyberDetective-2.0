@@ -121,3 +121,12 @@
   animation: flicker 0.15s infinite;
 }
 
+/* Keyboard navigation focus indicator — crime buttons */
+[data-crime-btn]:focus-visible {
+  outline: 2px solid #f69322;
+  outline-offset: 2px;
+  box-shadow: 0 0 12px rgba(246, 147, 34, 0.6), 0 0 24px rgba(246, 147, 34, 0.25);
+  z-index: 10;
+  position: relative;
+}
+
