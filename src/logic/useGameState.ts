@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { GameState, Evidence, CrimeType, CatalogueEntry, BribeRecord, LevelCulprit } from '../types/game';
-import { generateDayEvidences, EVIDENCE_TEMPLATES, AUTHORS, GRAVITY_RANGE, getRandomAge } from './gameEngine';
+import { generateDayEvidences, EVIDENCE_TEMPLATES, AUTHORS, GRAVITY_RANGE, getRandomAge, FULL_NAME_BY_AUTHOR, REAL_EVIDENCE_POOL } from './gameEngine';
 import { AVLTree } from './avlTree';
 
 export interface DayTransitionInfo {
@@ -44,6 +44,7 @@ const INITIAL_STATE: GameState = {
   rootAgeExclusionAge: null,
   rootAgeExclusionRemaining: 0,
   cataloguedLog: [],
+  penalizedEvidenceIds: [],
   tutorialStep: 0,
   bribeHistory: [],
   levelCulprits: [],
@@ -58,6 +59,37 @@ const SUSPECT_FULL_NAMES = [
   'Laura Jiménez Soto', 'Tomás Acevedo Gil', 'Paula Andrea Rincón',
   'Emilio Zapata Muñoz', 'Gabriela Navarro Díaz',
 ];
+
+const MALE_FIRST_NAMES = ['Eduardo', 'Carlos', 'Juan', 'Alberto', 'Rodrigo', 'Fernando', 'Mario', 'Gustavo', 'Hernán'];
+const FEMALE_FIRST_NAMES = ['María', 'Sandra', 'Patricia', 'Claudia', 'Ana', 'Rosa', 'Gloria', 'Liliana', 'Esperanza'];
+const LAWYER_NAMES = ['Dr. Ramírez & Asociados', 'Lic. Gómez Defensa Legal', 'Dr. Pérez Abogados', 'Estudio Jurídico Vargas', 'Dra. Morales & Cía.'];
+
+const makeBribeRecord = (culprit: LevelCulprit, day: number): BribeRecord => {
+  const parts = culprit.fullName.split(' ');
+  const lastName = parts.length >= 3 ? parts.slice(2).join(' ') : parts.slice(1).join(' ');
+  const relIdx = Math.floor(Math.random() * 3); // 0=Padre, 1=Madre, 2=Abogado
+  let sender: string;
+  let relationship: string;
+  if (relIdx === 0) {
+    sender = `${MALE_FIRST_NAMES[Math.floor(Math.random() * MALE_FIRST_NAMES.length)]} ${lastName}`;
+    relationship = `Padre de ${culprit.fullName}`;
+  } else if (relIdx === 1) {
+    sender = `${FEMALE_FIRST_NAMES[Math.floor(Math.random() * FEMALE_FIRST_NAMES.length)]} ${lastName}`;
+    relationship = `Madre de ${culprit.fullName}`;
+  } else {
+    sender = LAWYER_NAMES[Math.floor(Math.random() * LAWYER_NAMES.length)];
+    relationship = `Abogado/a de ${culprit.fullName}`;
+  }
+  return {
+    day,
+    amount: 200 + Math.floor(Math.random() * 401),
+    status: 'pending',
+    sender,
+    relationship,
+    targetSuspect: culprit.fullName,
+    targetEvidenceId: culprit.evidenceId,
+  };
+};
 
 const pickFullName = (usedNames: string[]): string => {
   const available = SUSPECT_FULL_NAMES.filter(n => !usedNames.includes(n));
@@ -98,45 +130,46 @@ export function useGameState() {
   };
 
   const createRandomValeriaMessage = (day: number, targetGameSeconds: number, excludeAge: number | null = null): Evidence => {
-    // Generate evidence using day-based filtering
-    const availableCrimeTypes: string[] = ['None']; // Positive comments always available
-    if (day <= 2) {
-      availableCrimeTypes.push('Injuria');
-    } else if (day <= 4) {
-      availableCrimeTypes.push('Injuria', 'Calumnia');
-    } else if (day <= 6) {
-      availableCrimeTypes.push('Injuria', 'Calumnia', 'Suplantación');
-    } else if (day <= 8) {
-      availableCrimeTypes.push('Injuria', 'Calumnia', 'Suplantación', 'Hostigamiento');
-    } else {
-      availableCrimeTypes.push('Injuria', 'Calumnia', 'Suplantación', 'Hostigamiento', 'Amenazas');
+    const gameLevel = Math.min(5, Math.max(1, Math.ceil(day / 2)));
+    const levelPool = REAL_EVIDENCE_POOL[gameLevel];
+    const [minG, maxG] = GRAVITY_RANGE[Math.min(5, Math.max(1, day))];
+    const id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
+
+    // 60% criminal (from real pool), 40% positive (from None templates)
+    if (levelPool && levelPool.length > 0 && Math.random() < 0.6) {
+      const item = levelPool[Math.floor(Math.random() * levelPool.length)];
+      const gravity = minG + Math.floor(Math.random() * (maxG - minG + 1));
+      const groupTag = item.type === 'Chat'
+        ? `[Grupo de ${300 + Math.floor(Math.random() * 701)} miembros] `
+        : '';
+      return {
+        id,
+        type: item.type,
+        author: item.author,
+        age: item.age,
+        content: `${groupTag}"@${item.author}: ${item.content}"`,
+        timestamp: formatGameTime(targetGameSeconds),
+        gravity: minG + Math.floor(Math.random() * (maxG - minG + 1)),
+        correctCrime: item.crime,
+        details: item.details,
+      };
     }
 
-    // Filter templates to only include available crime types
-    const filteredTemplates: any[] = [];
-    Object.entries(EVIDENCE_TEMPLATES).forEach(([level, templates]) => {
+    // Positive (None) comments — keep original templates
+    const noneTemplates: any[] = [];
+    Object.values(EVIDENCE_TEMPLATES).forEach(templates => {
       (templates as any[]).forEach((template: any) => {
-        if (availableCrimeTypes.includes(template.crime)) {
-          filteredTemplates.push(template);
-        }
+        if (template.crime === 'None') noneTemplates.push(template);
       });
     });
-
-    const template = filteredTemplates[Math.floor(Math.random() * filteredTemplates.length)];
+    const template = noneTemplates[Math.floor(Math.random() * noneTemplates.length)];
     const content = template.content[Math.floor(Math.random() * template.content.length)];
     const author = AUTHORS[Math.floor(Math.random() * AUTHORS.length)];
     const age = getRandomAge(excludeAge);
-    const level = Math.min(5, Math.max(1, day));
-    const [minG, maxG] = GRAVITY_RANGE[level];
     const gravity = minG + Math.floor(Math.random() * (maxG - minG + 1));
-
-    // Unique ID
-    const id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
-
     const groupTag = template.type === 'Chat'
       ? `[Grupo de ${300 + Math.floor(Math.random() * 701)} miembros] `
       : '';
-
     return {
       id,
       type: template.type,
@@ -192,7 +225,7 @@ export function useGameState() {
     // Intentionally does NOT include evidenceCollected.length — fires only at day start
   }, [state.playerName, state.day, state.isGameOver]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tutorial step 1: explain pending evidence when day 1 loads
+  // Tutorial 0 → 1: Día 1, primera evidencia disponible — saludo de Alex
   useEffect(() => {
     if (
       state.day === 1 &&
@@ -203,56 +236,24 @@ export function useGameState() {
     ) {
       setState(prev => ({ ...prev, tutorialStep: 1 }));
       setAlexAlertMessage(
-        'Día 1, Detective. Tienes evidencias pendientes en pantalla. Lee cada comentario con cuidado y clasifícalo con el delito correcto: Injuria, Calumnia, Suplantación, Hostigamiento, Amenazas o Concierto para delinquir. Si el comentario es positivo o neutro, elige None. Cada error suma una amonestación. ¡Comienza cuando estés listo!'
+        `¡Buenos días, Detective ${state.playerName}! Como es tu primer día te indicaré cómo utilizar tu lugar de trabajo. En la parte izquierda de tu pantalla encontrarás las evidencias pendientes — selecciónalas y clasifícalas una a una. En la parte derecha verás los tipos de delito disponibles: elige el que mejor describe el comentario. Si es positivo o neutro, selecciona None. ¡Comienza con tu primera evidencia!`
       );
     }
   }, [state.evidenceCollected.length, state.day, state.tutorialStep, state.processedEvidenceIds.length, state.isGameOver]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tutorial step 2: explain navigation bar after first classification
+  // Tutorial 2 → 3: Día 2 — Tablero Táctico desbloqueado, padres llegan
   useEffect(() => {
     if (
-      state.day === 1 &&
-      state.tutorialStep === 1 &&
-      state.processedEvidenceIds.length === 1 &&
+      state.day === 2 &&
+      state.tutorialStep === 2 &&
       !state.isGameOver
     ) {
-      setState(prev => ({ ...prev, tutorialStep: 2 }));
+      setState(prev => ({ ...prev, tutorialStep: 3 }));
       setAlexAlertMessage(
-        '¡Bien hecho! Ahora presta atención a la barra inferior derecha. Allí encontrarás dos herramientas clave: el MAPA DE INVESTIGACIÓN (ícono de pin), donde se visualizan las capas del acoso catalogadas y puedes asignar penas posibles a cada evidencia; y el TABLERO TÁCTICO (ícono de capas), donde puedes comparar hipótesis, revisar el árbol de delitos y hacer anotaciones sobre el caso. Úsalas para construir tu expediente.'
+        `¡Bienvenido al Día 2, Detective ${state.playerName}! Hoy comenzarán a llegar los padres de los involucrados. Por eso el TABLERO TÁCTICO ya está disponible (ícono de capas en la barra inferior): úsalo para revisar perfiles de sospechosos, gestionar sobornos y hacer anotaciones. Mantén la integridad intacta y sigue clasificando con cuidado.`
       );
     }
-  }, [state.processedEvidenceIds.length, state.day, state.tutorialStep, state.isGameOver]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Tutorial step 1: explain pending evidence when day 1 loads
-  useEffect(() => {
-    if (
-      state.day === 1 &&
-      state.tutorialStep === 0 &&
-      state.evidenceCollected.length > 0 &&
-      state.processedEvidenceIds.length === 0 &&
-      !state.isGameOver
-    ) {
-      setState(prev => ({ ...prev, tutorialStep: 1 }));
-      setAlexAlertMessage(
-        'Día 1, Detective. Tienes evidencias pendientes en pantalla. Lee cada comentario con cuidado y clasifícalo con el delito correcto: Injuria, Calumnia, Suplantación, Hostigamiento, Amenazas o Concierto para delinquir. Si el comentario es positivo o neutro, elige None. Cada error suma una amonestación. ¡Comienza cuando estés listo!'
-      );
-    }
-  }, [state.evidenceCollected.length, state.day, state.tutorialStep, state.processedEvidenceIds.length, state.isGameOver]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Tutorial step 2: explain navigation bar after first classification
-  useEffect(() => {
-    if (
-      state.day === 1 &&
-      state.tutorialStep === 1 &&
-      state.processedEvidenceIds.length === 1 &&
-      !state.isGameOver
-    ) {
-      setState(prev => ({ ...prev, tutorialStep: 2 }));
-      setAlexAlertMessage(
-        '¡Bien hecho en tu primera clasificación! Ahora pon atención a la barra inferior derecha. Allí encuentras dos herramientas clave: el MAPA DE INVESTIGACIÓN (icóno de pin), donde se visualizan las capas del acoso catalogadas y puedes asignar penas posibles a cada evidencia; y el TABLERO TÁCTICO (icóno de capas), donde puedes revisar el árbol de delitos, comparar hipótesis y hacer anotaciones. Úsalas para construir tu expediente.'
-      );
-    }
-  }, [state.processedEvidenceIds.length, state.day, state.tutorialStep, state.isGameOver]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.day, state.tutorialStep, state.isGameOver]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize message scheduling at day start
   useEffect(() => {
@@ -333,9 +334,31 @@ export function useGameState() {
   useEffect(() => {
     if (state.awaitingDayEnd && state.timeRemaining === 0 && !state.isGameOver && state.currentEvidence === null && dayTransitionInfo === null) {
       setState(prev => ({ ...prev, awaitingDayEnd: false }));
+      if (state.day !== 10) {
+        startDayTransition();
+      }
+      // Day 10: the dedicated effect below will trigger startDayTransition when suspects + bribe are also resolved
+    }
+  }, [state.awaitingDayEnd, state.currentEvidence, state.timeRemaining, state.isGameOver, dayTransitionInfo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Day 10 completion watch: auto-trigger transition when ALL prerequisites are finally met
+  useEffect(() => {
+    if (
+      state.day === 10 &&
+      state.timeRemaining === 0 &&
+      !state.timerActive &&
+      !state.isGameOver &&
+      !state.awaitingDayEnd &&
+      dayTransitionInfo === null &&
+      state.currentEvidence === null &&
+      state.evidenceCollected.length === 0 &&
+      !state.levelCulprits.some(c => c.verdict === 'pending') &&
+      state.pendingBribeOffer === null
+    ) {
       startDayTransition();
     }
-  }, [state.awaitingDayEnd, state.currentEvidence, state.timeRemaining, state.isGameOver, dayTransitionInfo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.levelCulprits, state.pendingBribeOffer, state.evidenceCollected.length, state.currentEvidence, state.awaitingDayEnd, state.timeRemaining, state.timerActive, state.isGameOver, dayTransitionInfo]);
 
   const setPlayerName = (name: string) => {
     setState(prev => ({ ...prev, playerName: name }));
@@ -427,7 +450,15 @@ export function useGameState() {
       if (state.messagesGeneratedToday < 40 && elapsedGameSeconds < 6 * 3600 && nextMessageTimeRef.current === null) {
         scheduleNextMessage(elapsedGameSeconds, state.messagesGeneratedToday);
       }
-      setTimedMessage(messageText);
+      // Tutorial: after the very first correct classification on day 1
+      if (state.day === 1 && state.tutorialStep === 1 && state.processedEvidenceIds.length === 0) {
+        setState(prev => ({ ...prev, tutorialStep: 2 }));
+        setAlexAlertMessage(
+          `¡Excelente trabajo! Eso es exactamente lo que se espera de ti. Sigue así con las demás evidencias. Además, en la barra inferior derecha encontrarás dos herramientas clave: el ÁRBOL DEL CASO (icóno de árbol) donde se orgániza el expediente de manera jerárquica, y el MAPA DE INVESTIGACIÓN (icóno de pin) donde visualizarás las capas del acoso catalogadas y podrás asignar penas. ¡úsalas!`
+        );
+      } else {
+        setTimedMessage(messageText);
+      }
     } else {
       // Wrong classification — evidence STAYS in the list
       const newAmonestations = state.amonestations + 1;
@@ -518,6 +549,13 @@ export function useGameState() {
         if (alexWarning && !alexAlertMessage) {
           setAlexAlertMessage(alexWarning);
         }
+        // Tutorial: after the very first incorrect classification on day 1
+        if (state.day === 1 && state.tutorialStep === 1 && state.processedEvidenceIds.length === 0) {
+          setState(prev => ({ ...prev, tutorialStep: 2 }));
+          setAlexAlertMessage(
+            `No te preocupes, Detective. Con la práctica lo irás dominando. Recuerda que cada delito tiene características propias. Sigue revisando las demás evidencias con calma. En la barra inferior derecha encontrarás dos herramientas: el ÁRBOL DEL CASO (icóno de árbol) y el MAPA DE INVESTIGACIÓN (icóno de pin). ¡Úsalas para construir tu expediente!`
+          );
+        }
         setTimedMessage(`CLASIFICACIÓN INCORRECTA — Amonestación #${newAmonestations}/5`);
       }
     }
@@ -525,6 +563,25 @@ export function useGameState() {
 
   // Calculates end-of-day summary and opens the transition modal. Does NOT apply state yet.
   const startDayTransition = () => {
+    // Day 10 blocking: all evidence, suspects and bribes must be resolved first
+    if (state.day === 10) {
+      const hasPendingEvidence = state.currentEvidence !== null || state.evidenceCollected.length > 0;
+      const hasPendingBribe = state.pendingBribeOffer !== null;
+      const hasPendingSuspects = state.levelCulprits.some(c => c.verdict === 'pending');
+      if (hasPendingEvidence) {
+        if (!state.awaitingDayEnd) setState(prev => ({ ...prev, awaitingDayEnd: true }));
+        setTimedMessage('⚠️ Último día — Clasifica todos los comentarios pendientes antes de cerrar el caso.');
+        return;
+      }
+      if (hasPendingBribe) {
+        setTimedMessage('⚠️ Último día — Tienes un soborno pendiente. Acéptalo o recházalo antes de cerrar.');
+        return;
+      }
+      if (hasPendingSuspects) {
+        setTimedMessage('⚠️ Último día — Asigna una condena a todos los sospechosos en el Mapa de Investigación.');
+        return;
+      }
+    }
     const totalCost = 50;
     const moneyAfter = state.money - totalCost;
     const nextDay = state.day + 1;
@@ -585,21 +642,40 @@ export function useGameState() {
     const nextLevel = dayTransitionInfo.nextLevel;
     const completedDay = dayTransitionInfo.completedDay;
 
-    // At the end of every day: carry only the root to the next day/level.
-    // This ensures the tree resets between days, with the root (median-age culprit) persisting.
-    const trimmedTree = state.tree
-      ? { ...state.tree, left: null, right: null, height: 1 }
-      : null;
+    // At the end of a complete level (every 2 days): reset the tree entirely.
+    // Within a level, carry the full tree to the next day.
+    const trimmedTree = state.tree ?? null;
 
     const isEndOfLevel = completedDay % 2 === 0;
 
-    // At end-of-level: mark the suspect matching the root node as wasRoot
+    // At end-of-level: mark the root as wasRoot and auto-jail it
     const rootEvidenceId = state.tree?.evidenceId ?? null;
-    const updatedCulprits = isEndOfLevel && rootEvidenceId
+    let updatedCulprits = isEndOfLevel && rootEvidenceId
       ? state.levelCulprits.map(c =>
-          c.evidenceId === rootEvidenceId ? { ...c, wasRoot: true } : c
+          c.evidenceId === rootEvidenceId ? { ...c, wasRoot: true, verdict: 'jailed' as const } : c
         )
       : state.levelCulprits;
+
+    // If root culprit is not yet in the list, add and auto-jail them
+    if (isEndOfLevel && rootEvidenceId && !updatedCulprits.some(c => c.evidenceId === rootEvidenceId)) {
+      const entry = state.cataloguedLog.find(e => e.evidenceId === rootEvidenceId);
+      const rootNode = state.tree!;
+      if (entry) {
+        const personData = FULL_NAME_BY_AUTHOR[entry.author];
+        const newCulprit: LevelCulprit = {
+          level: entry.level,
+          author: entry.author,
+          fullName: personData ? personData.fullName : pickFullName(updatedCulprits.map(c => c.fullName)),
+          age: personData ? personData.age : rootNode.age,
+          crimeType: entry.crimeType,
+          evidenceId: entry.evidenceId,
+          verdict: 'jailed',
+          revealed: true,
+          wasRoot: true,
+        };
+        updatedCulprits = [...updatedCulprits, newCulprit];
+      }
+    }
 
     // Generate evidences for the new day, excluding already processed IDs
     const excludeAge = state.rootAgeExclusionRemaining > 0 ? state.rootAgeExclusionAge : null;
@@ -611,10 +687,15 @@ export function useGameState() {
       content: `${evidence.content} (recibido a las ${formatGameTime(0 + (index * 300))})`,
     }));
 
-    // Bribe offer: only on days 7 and 9, maximum 2 times total
-    const shouldOfferBribe = (nextDay === 7 || nextDay === 9) && state.bribeCount < 2;
-    const bribeAmount = shouldOfferBribe
-      ? 300 + Math.floor(Math.random() * 301)  // $300–$600
+    // Bribe offer from day 2+: parent/lawyer of a jailed suspect that hasn't been bribed yet
+    // Only ~50% of eligible suspects will actually send a bribe email (random)
+    const alreadyBribedIds = state.bribeHistory.map(b => b.targetEvidenceId);
+    const eligibleForBribe = updatedCulprits.filter(
+      c => c.verdict !== 'dismissed' && !alreadyBribedIds.includes(c.evidenceId)
+    );
+    const shouldOfferBribe = nextDay >= 2 && eligibleForBribe.length > 0 && Math.random() < 0.5;
+    const bribeRecord = shouldOfferBribe
+      ? makeBribeRecord(eligibleForBribe[Math.floor(Math.random() * eligibleForBribe.length)], nextDay)
       : null;
 
     setState(prev => ({
@@ -622,18 +703,17 @@ export function useGameState() {
       money: dayTransitionInfo.moneyAfter,
       day: nextDay,
       level: nextLevel,
-      tree: trimmedTree,
+      tree: isEndOfLevel ? null : trimmedTree,
+      rootAgeExclusionAge: isEndOfLevel ? null : prev.rootAgeExclusionAge,
+      rootAgeExclusionRemaining: isEndOfLevel ? 0 : prev.rootAgeExclusionRemaining,
       levelCulprits: updatedCulprits,
       evidenceCollected: newEvidences,
       currentEvidence: newEvidences[0] || null,
       timeRemaining: 300,
       timerActive: true,
       dayEarnings: 0,
-      pendingBribeOffer: bribeAmount,
-      bribeCount: shouldOfferBribe ? prev.bribeCount + 1 : prev.bribeCount,
-      bribeHistory: shouldOfferBribe && bribeAmount !== null
-        ? [...prev.bribeHistory, { day: nextDay, amount: bribeAmount, status: 'pending' } as BribeRecord]
-        : prev.bribeHistory,
+      pendingBribeOffer: bribeRecord,
+      bribeHistory: bribeRecord ? [...prev.bribeHistory, bribeRecord] : prev.bribeHistory,
       messagesGeneratedToday: 0,
     }));
 
@@ -643,36 +723,83 @@ export function useGameState() {
   };
 
   const acceptBribe = () => {
-    const amount = state.pendingBribeOffer;
-    if (amount === null) return;
+    const bribe = state.pendingBribeOffer;
+    if (!bribe) return;
     setState(prev => ({
       ...prev,
-      money: prev.money + amount,
+      dayEarnings: prev.dayEarnings + bribe.amount,
       integrity: Math.max(0, prev.integrity - 30),
       hasAcceptedBribe: true,
       pendingBribeOffer: null,
-      bribeHistory: prev.bribeHistory.map((b, i) =>
-        i === prev.bribeHistory.length - 1 && b.status === 'pending'
+      bribeHistory: prev.bribeHistory.map(b =>
+        b.targetEvidenceId === bribe.targetEvidenceId && b.status === 'pending'
           ? { ...b, status: 'accepted' as const }
           : b
       ),
     }));
-    setTimedMessage(`Has aceptado el soborno. +$${amount} — Tu integridad ha caído. Asuntos Internos está vigilando.`);
+    setTimedMessage(`Has aceptado el soborno de ${bribe.sender}. +$${bribe.amount} se sumará al cierre del día. Integridad -30%.`);
+  };
+
+  const holdBribe = () => {
+    const bribe = state.pendingBribeOffer;
+    if (!bribe) return;
+    setState(prev => ({
+      ...prev,
+      pendingBribeOffer: null,
+      bribeHistory: prev.bribeHistory.map(b =>
+        b.targetEvidenceId === bribe.targetEvidenceId && b.status === 'pending'
+          ? { ...b, status: 'on-hold' as const }
+          : b
+      ),
+    }));
+    setTimedMessage('Soborno puesto en espera. Lo encontrarás en el Tablero Táctico.');
   };
 
   const rejectBribe = () => {
+    const bribe = state.pendingBribeOffer;
+    if (!bribe) return;
     setState(prev => ({
       ...prev,
       integrity: Math.min(100, prev.integrity + 5),
       pendingBribeOffer: null,
-      bribeHistory: prev.bribeHistory.map((b, i) =>
-        i === prev.bribeHistory.length - 1 && b.status === 'pending'
+      bribeHistory: prev.bribeHistory.map(b =>
+        b.targetEvidenceId === bribe.targetEvidenceId && b.status === 'pending'
           ? { ...b, status: 'rejected' as const }
           : b
       ),
     }));
     setTimedMessage('Has rechazado el soborno. Integridad +5%. Valeria puede confiar en ti.');
   };
+
+  const acceptHeldBribe = useCallback((targetEvidenceId: string) => {
+    const bribe = state.bribeHistory.find(b => b.targetEvidenceId === targetEvidenceId && b.status === 'on-hold');
+    if (!bribe) return;
+    setState(prev => ({
+      ...prev,
+      dayEarnings: prev.dayEarnings + bribe.amount,
+      integrity: Math.max(0, prev.integrity - 30),
+      hasAcceptedBribe: true,
+      bribeHistory: prev.bribeHistory.map(b =>
+        b.targetEvidenceId === targetEvidenceId && b.status === 'on-hold'
+          ? { ...b, status: 'accepted' as const }
+          : b
+      ),
+    }));
+    setTimedMessage(`Soborno de ${bribe.sender} aceptado. +$${bribe.amount} se sumará al cierre del día. Integridad -30%.`);
+  }, [state.bribeHistory]);
+
+  const rejectHeldBribe = useCallback((targetEvidenceId: string) => {
+    setState(prev => ({
+      ...prev,
+      integrity: Math.min(100, prev.integrity + 5),
+      bribeHistory: prev.bribeHistory.map(b =>
+        b.targetEvidenceId === targetEvidenceId && b.status === 'on-hold'
+          ? { ...b, status: 'rejected' as const }
+          : b
+      ),
+    }));
+    setTimedMessage('Soborno rechazado. Integridad +5%.');
+  }, []);
 
   const jailCulprit = (evidenceId: string) => {
     const culprit = state.levelCulprits.find(c => c.evidenceId === evidenceId);
@@ -731,24 +858,19 @@ export function useGameState() {
     if (state.levelCulprits.some(c => c.evidenceId === evidenceId)) return;
     const entry = state.cataloguedLog.find(e => e.evidenceId === evidenceId);
     if (!entry) return;
+    // Use real person data if available, otherwise fallback to random name
+    const personData = FULL_NAME_BY_AUTHOR[entry.author];
     const newCulprit: LevelCulprit = {
       level: entry.level,
       author: entry.author,
-      fullName: pickFullName(state.levelCulprits.map(c => c.fullName)),
-      age: 0, // age not stored in CatalogueEntry; will be filled from evidence below
+      fullName: personData ? personData.fullName : pickFullName(state.levelCulprits.map(c => c.fullName)),
+      age: personData ? personData.age : 18,
       crimeType: entry.crimeType,
       evidenceId: entry.evidenceId,
       verdict: 'pending',
       revealed: true,
       wasRoot: false,
     };
-    // Try to get age from the tree or default
-    const findAge = (node: any): number => {
-      if (!node) return 18;
-      if (node.evidenceId === evidenceId) return node.age;
-      return findAge(node.left) || findAge(node.right);
-    };
-    newCulprit.age = findAge(state.tree) || 18;
     setState(prev => ({
       ...prev,
       levelCulprits: [...prev.levelCulprits, newCulprit],
@@ -803,6 +925,24 @@ export function useGameState() {
     }
   }, [setTimedMessage]);
 
+  const penalizeEvidence = useCallback((evidenceId: string) => {
+    setState(prev => ({
+      ...prev,
+      penalizedEvidenceIds: prev.penalizedEvidenceIds.includes(evidenceId)
+        ? prev.penalizedEvidenceIds
+        : [...prev.penalizedEvidenceIds, evidenceId],
+    }));
+  }, []);
+
+  // Alex notification when a new bribe arrives
+  useEffect(() => {
+    if (state.pendingBribeOffer !== null && !state.isGameOver) {
+      setAlexAlertMessage(
+        `📬 ¡Detective ${state.playerName}, tienes un correo nuevo!`
+      );
+    }
+  }, [state.pendingBribeOffer?.targetEvidenceId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return {
     state,
     message,
@@ -816,10 +956,14 @@ export function useGameState() {
     confirmEndDay,
     acknowledgeAlexAlert,
     acceptBribe,
+    holdBribe,
     rejectBribe,
+    acceptHeldBribe,
+    rejectHeldBribe,
     jailCulprit,
     dismissCulprit,
     addSuspect,
+    penalizeEvidence,
     submitFinalVerdict,
     resetGame,
     saveGame,

@@ -36,7 +36,11 @@ export interface CatalogueEntry {
 export interface BribeRecord {
   day: number;
   amount: number;
-  status: 'pending' | 'accepted' | 'rejected';
+  status: 'pending' | 'accepted' | 'rejected' | 'on-hold';
+  sender: string;           // e.g. "Eduardo Méndez"
+  relationship: string;     // e.g. "Padre de Carlos Andrés Méndez"
+  targetSuspect: string;    // fullName of suspect they want freed
+  targetEvidenceId: string; // evidenceId of the suspect
 }
 
 export interface LevelCulprit {
@@ -67,7 +71,7 @@ export interface GameState {
   gameOverType: 'insolvencia' | 'incompetencia' | 'veredicto' | 'corrupcion' | 'victoria' | '';
   hasAcceptedBribe: boolean;
   bribeCount: number;                     // how many times bribe was offered (max 2)
-  pendingBribeOffer: number | null;       // active bribe amount, null = no offer
+  pendingBribeOffer: BribeRecord | null;  // active bribe offer (full record), null = no offer
   timeRemaining: number;                  // seconds, starts at 300
   timerActive: boolean;
   awaitingDayEnd: boolean;               // day ended but waiting for current evidence classification
@@ -77,6 +81,7 @@ export interface GameState {
   rootAgeExclusionAge: number | null;    // age that is temporarily excluded from new comments
   rootAgeExclusionRemaining: number;     // how many comments still avoid the current root age
   cataloguedLog: CatalogueEntry[];        // all evidences inserted into the tree (with day/level)
+  penalizedEvidenceIds: string[];         // evidence IDs that have been penalized in the map
   tutorialStep: number;                   // 0=not started, 1=intro shown, 2=nav shown
   bribeHistory: BribeRecord[];            // log of all bribe offers
   levelCulprits: LevelCulprit[];          // root node recorded at end of each level
