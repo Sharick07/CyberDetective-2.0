@@ -6,7 +6,8 @@ export type Screen =
   | 'case-tree'
   | 'investigation-map'
   | 'tactical-board'
-  | 'game-over';
+  | 'game-over'
+  | 'multiplayer-lobby';
 
 // Pantallas internas (muestran Header y Footer de navegación)
 export const INTERNAL_SCREENS: Screen[] = [

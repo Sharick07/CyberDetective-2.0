@@ -107,6 +107,13 @@ const MainMenu: React.FC<MainMenuProps> = ({
               <span className="block text-xs mt-1">(Nivel 1: The First Signs)</span>
             </button>
             <button
+              onClick={() => onNavigate('multiplayer-lobby')}
+              className="w-full max-w-lg py-3 border-2 border-cyber-orange bg-black text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase shadow-md shadow-cyber-orange/20"
+            >
+              <span className="block text-base">Modo Competitivo Online</span>
+              <span className="block text-xs mt-1 opacity-80">(Crea o únete a una sala de investigación)</span>
+            </button>
+            <button
               onClick={handleLoad}
               className="w-full max-w-lg py-3 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
             >

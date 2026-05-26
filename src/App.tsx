@@ -15,6 +15,7 @@ import CaseTreeScreen from './components/CaseTreeScreen';
 import InvestigationMap from './components/InvestigationMap';
 import TacticalBoard from './components/TacticalBoard';
 import DayTransitionModal from './components/DayTransitionModal';
+import LobbyScreen from './components/LobbyScreen';
 
 export default function App() {
   const {
@@ -144,6 +145,7 @@ export default function App() {
       case 'investigation-map': return 'CyberDetective: Mapa de Investigación';
       case 'tactical-board':   return 'CyberDetective: Pizarra Táctica';
       case 'game-over':        return 'SISTEMA BLOQUEADO';
+      case 'multiplayer-lobby' as any: return 'CyberDetective: Sala Competitiva';
       default:                 return 'CyberDetective';
     }
   };
@@ -232,11 +234,17 @@ export default function App() {
                 onRestart={() => { resetGame(); setScreen('boot'); }}
               />
             )}
+            {screen === 'multiplayer-lobby' as any && (
+              <LobbyScreen 
+                playerName={state.playerName} 
+                onBack={() => setScreen('main-menu' as any)} 
+              />
+            )}
           </motion.div>
         </AnimatePresence>
       </main>
 
-      {screen !== 'boot' && screen !== 'intro' && screen !== 'game-over' && screen !== 'main-menu' && (
+      {screen !== 'boot' && screen !== 'intro' && screen !== 'game-over' && screen !== 'main-menu' && screen !== 'multiplayer-lobby' as any && (
         <Footer
           message={message}
           alexNote={alexAlertMessage}
