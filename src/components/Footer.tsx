@@ -65,7 +65,7 @@ const Footer: React.FC<FooterProps> = ({
       {/* Navegación */}
       <div className="retro-border w-full md:w-1/4 bg-black p-2 flex flex-col justify-between">
         <div className="text-[10px] opacity-70 uppercase mb-2">Navegación</div>
-        <div className="flex justify-between">
+        <div data-tutorial-id="tutorial-navigation" className="flex justify-between">
           <button
             onClick={() => onNavigate('case-tree')}
             title="Árbol"

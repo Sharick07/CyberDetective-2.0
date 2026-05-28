@@ -10,12 +10,9 @@ interface InvestigationMapProps {
   addSuspect: (evidenceId: string) => void;
   penalizedEvidenceIds: string[];
   onPenalize: (evidenceId: string) => void;
+  removeFalseEvidence: (evidenceId: string) => void;
 }
 
-/**
- * Mapa de investigación orbital.
- * Muestra las capas del acoso como nodos orbitales y permite penalizar evidencias.
- */
 const InvestigationMap: React.FC<InvestigationMapProps> = ({
   cataloguedLog,
   currentLevel,
@@ -23,11 +20,14 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
   addSuspect,
   penalizedEvidenceIds,
   onPenalize,
+  removeFalseEvidence,
 }) => {
-  const [selectedCapa, setSelectedCapa]   = useState<number | null>(null);
-  const [selectedEntry, setSelectedEntry] = useState<CatalogueEntry | null>(null);
-  const [alexMsg, setAlexMsg]             = useState<string>('');
-  const [manualCapa, setManualCapa]       = useState<number | null>(null);
+  const [selectedCapa, setSelectedCapa]       = useState<number | null>(null);
+  const [selectedEntry, setSelectedEntry]     = useState<CatalogueEntry | null>(null);
+  const [alexMsg, setAlexMsg]                 = useState<string>('');
+  const [manualCapa, setManualCapa]           = useState<number | null>(null);
+  // State for the false-evidence elimination modal
+  const [pendingFalseEntry, setPendingFalseEntry] = useState<CatalogueEntry | null>(null);
 
   const filteredLog = selectedCapa !== null
     ? cataloguedLog.filter(e => e.level === selectedCapa)
@@ -49,12 +49,106 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
     'bottom-[18%] left-[18%]',
   ];
 
+  // ── Handler: select an entry or intercept false evidence ──────────────────
+  const handleSelectEntry = (entry: CatalogueEntry) => {
+    if (entry.isFalseEvidence) {
+      setPendingFalseEntry(entry);
+      return;
+    }
+    setSelectedEntry(selectedEntry?.evidenceId === entry.evidenceId ? null : entry);
+    setAlexMsg('');
+  };
+
+  // ── Handler: confirm deletion of false evidence ───────────────────────────
+  const handleConfirmDelete = () => {
+    if (!pendingFalseEntry) return;
+    removeFalseEvidence(pendingFalseEntry.evidenceId);
+    if (selectedEntry?.evidenceId === pendingFalseEntry.evidenceId) setSelectedEntry(null);
+    setPendingFalseEntry(null);
+  };
+
   return (
     <div
       className="flex-1 grid grid-cols-12 gap-2 overflow-hidden py-2 h-full min-h-0 relative"
       style={{ fontFamily: '"JetBrains Mono", "Share Tech Mono", monospace' }}
     >
-      {/* ===== Modal del Manual ===== */}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          MODAL: Eliminación de evidencia falsa / ruido
+          Aparece cuando el jugador selecciona un comentario marcado como
+          isFalseEvidence === true (positivo clasificado erróneamente).
+      ══════════════════════════════════════════════════════════════════ */}
+      {pendingFalseEntry && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/92 flex items-center justify-center p-6"
+          style={{ fontFamily: '"JetBrains Mono","Share Tech Mono",monospace' }}
+          onClick={() => setPendingFalseEntry(null)}
+        >
+          <div
+            className="w-full max-w-md bg-black border-2 border-yellow-500 shadow-2xl shadow-yellow-500/20 flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Terminal title bar */}
+            <div className="bg-yellow-500 text-black px-4 py-2 flex items-center justify-between shrink-0">
+              <span className="font-bold uppercase text-sm tracking-widest">
+                ⚠ ALERTA — RUIDO DETECTADO
+              </span>
+              <button
+                onClick={() => setPendingFalseEntry(null)}
+                className="w-7 h-7 flex items-center justify-center border border-black/30 hover:bg-black hover:text-yellow-500 font-bold text-base leading-none ml-3 transition-colors"
+              >✕</button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Main question */}
+              <p
+                className="text-yellow-300 text-base leading-snug"
+                style={{ fontFamily: '"VT323", monospace', fontSize: 20 }}
+              >
+                Este comentario no corresponde a un delito,<br />
+                ¿quieres eliminarlo?
+              </p>
+
+              {/* Evidence preview */}
+              <div className="bg-yellow-950/40 border border-yellow-600/40 p-3 space-y-1">
+                <p className="text-[10px] uppercase text-yellow-500/60 tracking-wider font-bold">
+                  Comentario:
+                </p>
+                <p className="text-yellow-200/80 italic text-[12px] leading-snug">
+                  {pendingFalseEntry.content}
+                </p>
+                <p className="text-yellow-500/40 text-[10px] mt-1">
+                  @{pendingFalseEntry.author} &nbsp;·&nbsp; clasificado como{' '}
+                  <span className="text-yellow-400/70 font-bold">{pendingFalseEntry.crimeType}</span>
+                  &nbsp;·&nbsp; Día {pendingFalseEntry.day}
+                </p>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={handleConfirmDelete}
+                  className="flex-1 bg-red-700 hover:bg-red-600 text-white font-bold text-sm py-2.5 uppercase tracking-wider transition-colors border border-red-500"
+                  style={{ fontFamily: '"VT323", monospace', fontSize: 16 }}
+                >
+                  Eliminar
+                </button>
+                <button
+                  onClick={() => setPendingFalseEntry(null)}
+                  className="flex-1 border border-yellow-500/60 text-yellow-400 hover:bg-yellow-500 hover:text-black font-bold text-sm py-2.5 uppercase tracking-wider transition-colors"
+                  style={{ fontFamily: '"VT323", monospace', fontSize: 16 }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          MODAL: Manual de penalización por capa
+      ══════════════════════════════════════════════════════════════════ */}
       {manualCapa !== null && (() => {
         const capaInfo = CAPA_INFO[manualCapa - 1];
         const manualKey = Object.keys(CRIME_MANUAL).find(k => capaInfo.label.startsWith(k)) ?? capaInfo.label;
@@ -71,7 +165,9 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
               onClick={e => e.stopPropagation()}
             >
               <div className="bg-cyber-orange text-black px-4 py-3 flex items-center justify-between shrink-0">
-                <span className="font-bold uppercase text-sm tracking-widest">📖 Manual — {capaInfo.emoji} {capaInfo.label}</span>
+                <span className="font-bold uppercase text-sm tracking-widest">
+                  📖 Manual — {capaInfo.emoji} {capaInfo.label}
+                </span>
                 <button
                   onClick={() => setManualCapa(null)}
                   className="w-7 h-7 flex items-center justify-center border border-black/30 hover:bg-black hover:text-cyber-orange text-black font-bold text-base leading-none ml-3 transition-colors"
@@ -126,7 +222,9 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
         );
       })()}
 
-      {/* Panel Izquierdo: Evidencias catalogadas */}
+      {/* ══════════════════════════════════════════════════════════════════
+          PANEL IZQUIERDO — Evidencias catalogadas
+      ══════════════════════════════════════════════════════════════════ */}
       <section className="col-span-3 flex flex-col h-full min-h-0">
         <div className="flex-1 retro-border flex flex-col bg-black h-full min-h-0">
           <div className="panel-header flex items-center justify-between">
@@ -162,24 +260,33 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
                     {entries.map(entry => (
                       <button
                         key={entry.evidenceId}
-                        onClick={() => { setSelectedEntry(selectedEntry?.evidenceId === entry.evidenceId ? null : entry); setAlexMsg(''); }}
+                        onClick={() => handleSelectEntry(entry)}
                         className={cn(
                           'w-full text-left border p-2 mb-2 text-[11px] transition-all',
-                          levelCulprits.some(c => c.evidenceId === entry.evidenceId && c.wasRoot)
-                            ? 'bg-red-950 border-red-500'
-                            : selectedEntry?.evidenceId === entry.evidenceId
-                              ? 'bg-cyber-orange/20 border-cyber-orange'
-                              : 'bg-black border-cyber-orange/40 hover:border-cyber-orange/70',
+                          // False evidence: yellow warning styling
+                          entry.isFalseEvidence
+                            ? 'bg-yellow-950/30 border-yellow-600/50 hover:border-yellow-400'
+                            : levelCulprits.some(c => c.evidenceId === entry.evidenceId && c.wasRoot)
+                              ? 'bg-red-950 border-red-500'
+                              : selectedEntry?.evidenceId === entry.evidenceId
+                                ? 'bg-cyber-orange/20 border-cyber-orange'
+                                : 'bg-black border-cyber-orange/40 hover:border-cyber-orange/70',
                         )}
                       >
                         <div className="flex justify-between items-center mb-1">
                           <span className={cn(
                             'font-bold uppercase text-[10px]',
-                            levelCulprits.some(c => c.evidenceId === entry.evidenceId && c.wasRoot)
-                              ? 'text-red-400' : 'text-cyber-orange',
+                            entry.isFalseEvidence
+                              ? 'text-yellow-400'
+                              : levelCulprits.some(c => c.evidenceId === entry.evidenceId && c.wasRoot)
+                                ? 'text-red-400' : 'text-cyber-orange',
                           )}>
                             {entry.crimeType}
-                            {levelCulprits.some(c => c.evidenceId === entry.evidenceId && c.wasRoot) ? ' ★ CULPABLE' : ''}
+                            {entry.isFalseEvidence && (
+                              <span className="ml-1 text-yellow-500/80 normal-case">⚠ ruido</span>
+                            )}
+                            {!entry.isFalseEvidence && levelCulprits.some(c => c.evidenceId === entry.evidenceId && c.wasRoot)
+                              ? ' ★ CULPABLE' : ''}
                           </span>
                           <span className="text-cyber-orange/40 text-[10px] uppercase">{entry.type}</span>
                         </div>
@@ -194,13 +301,15 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
         </div>
       </section>
 
-      {/* Panel Central: Mapa orbital */}
+      {/* ══════════════════════════════════════════════════════════════════
+          PANEL CENTRAL — Mapa orbital
+      ══════════════════════════════════════════════════════════════════ */}
       <section className="col-span-6 retro-border bg-black grid-bg relative overflow-hidden p-0">
         <div className="panel-header !rounded-none !mb-0">
           <span>▼ Mapa de Investigación - Capas del Acoso</span>
         </div>
         <div className="absolute inset-0 top-8 flex items-center justify-center">
-          {/* Líneas SVG de conexión */}
+          {/* SVG connection lines */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }} viewBox="0 0 100 100" preserveAspectRatio="none">
             {(() => {
               const targets = [[50, 9], [88, 31], [12, 31], [79, 82], [21, 82]];
@@ -220,12 +329,12 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
             })()}
           </svg>
 
-          {/* Círculos orbitales */}
+          {/* Orbital rings */}
           {[420, 320, 220, 120].map(size => (
             <div key={size} className="border border-cyber-orange/20 rounded-full absolute" style={{ width: size, height: size, zIndex: 1 }} />
           ))}
 
-          {/* Nodos de capa */}
+          {/* Layer nodes */}
           {CAPA_INFO.map((capa, i) => {
             const isSelected  = selectedCapa === capa.level;
             const isAvailable = capa.level <= currentLevel;
@@ -256,7 +365,7 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
             );
           })}
 
-          {/* Núcleo central */}
+          {/* Core node */}
           <div className="w-14 h-14 border-2 border-cyber-orange bg-black flex items-center justify-center text-2xl relative z-10">
             <span>🤝</span>
             <div className="absolute -bottom-10 text-[8px] text-center w-28 font-bold uppercase leading-tight">Núcleo de<br />la Verdad</div>
@@ -264,7 +373,9 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
         </div>
       </section>
 
-      {/* Panel Derecho: Detalles de capa y penas */}
+      {/* ══════════════════════════════════════════════════════════════════
+          PANEL DERECHO — Detalles de capa, sentencia y pistas
+      ══════════════════════════════════════════════════════════════════ */}
       <section className="col-span-3 flex flex-col h-full min-h-0">
         <div className="retro-border bg-black flex-grow flex flex-col min-h-0">
           <div className="panel-header">
@@ -285,20 +396,50 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
                 <p><strong>ARTÍCULO:</strong> {CAPA_INFO[selectedCapa - 1].sublabel}</p>
                 <p className="italic text-gray-600">{CAPA_INFO[selectedCapa - 1].description}</p>
                 <p><strong>EVIDENCIAS:</strong> {filteredLog.length}</p>
-                {filteredLog.length === 0 && <p className="italic text-gray-500">Sin evidencias catalogadas en esta capa.</p>}
+                {filteredLog.length === 0 && (
+                  <p className="italic text-gray-500">Sin evidencias catalogadas en esta capa.</p>
+                )}
                 {visibleLog.length === 0 && filteredLog.length > 0 && (
                   <p className="italic text-green-700 font-bold">✓ Todas las evidencias de esta capa han sido procesadas.</p>
                 )}
-                {/* Detalle de evidencia seleccionada y penas */}
+
+                {/* ── Sentencing panel for selected entry ── */}
                 {selectedEntry && (
                   <div className="border-t border-black pt-3 space-y-3">
+
+                    {/* Evidence content */}
                     <div className="bg-gray-100 border border-gray-400 p-2 rounded">
-                      <p className="text-[10px] uppercase font-bold text-gray-500 mb-1">Comentario seleccionado:</p>
+                      <p className="text-[10px] uppercase font-bold text-gray-500 mb-1">
+                        Comentario seleccionado:
+                      </p>
                       <p className="italic text-gray-800 leading-snug">{selectedEntry.content}</p>
-                      <p className="text-gray-500 text-[10px] mt-1">@{selectedEntry.author} · Día {selectedEntry.day} · {selectedEntry.type}</p>
+                      <p className="text-gray-500 text-[10px] mt-1">
+                        @{selectedEntry.author} · Día {selectedEntry.day} · {selectedEntry.type}
+                      </p>
                     </div>
+
+                    {/* ── PENALTY HINT ── */}
+                    {selectedEntry.penaltyHint && (
+                      <div className="bg-green-50 border-l-4 border-green-500 p-2.5 rounded-sm">
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-green-600 text-[13px] shrink-0 mt-px">🔍</span>
+                          <div>
+                            <p className="text-[10px] font-bold uppercase text-green-700 tracking-wider mb-0.5">
+                              Pista de Sentencia
+                            </p>
+                            <p className="text-green-800/80 italic text-[11px] leading-snug">
+                              {selectedEntry.penaltyHint}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Penalty options */}
                     <div>
-                      <p className="font-bold uppercase border-b border-black pb-1 mb-2">Penas posibles ({selectedEntry.crimeType}):</p>
+                      <p className="font-bold uppercase border-b border-black pb-1 mb-2">
+                        Penas posibles ({selectedEntry.crimeType}):
+                      </p>
                       <div className="space-y-2">
                         {(PENALTY_OPTIONS[selectedEntry.crimeType] ?? []).map((opt, idx) => (
                           <button
@@ -321,11 +462,15 @@ const InvestigationMap: React.FC<InvestigationMapProps> = ({
                     </div>
                   </div>
                 )}
+
                 {!selectedEntry && visibleLog.length > 0 && (
-                  <p className="text-gray-400 italic text-[10px] mt-2">Haz clic en una evidencia para ver las penas posibles.</p>
+                  <p className="text-gray-400 italic text-[10px] mt-2">
+                    Haz clic en una evidencia para ver las penas posibles.
+                  </p>
                 )}
               </div>
             ) : (
+              /* ── No layer selected: case overview ── */
               <div className="text-xs space-y-3">
                 <h2 className="text-lg font-bold border-b border-black mb-2 uppercase">Estado del Caso</h2>
                 <p><strong>NIVEL ACTUAL:</strong> {currentLevel}</p>

@@ -49,7 +49,7 @@ const TacticalBoard: React.FC<TacticalBoardProps> = ({
   const filteredBribes = selectedFile !== null
     ? (() => {
         const [d1, d2] = getDaysForLevel(selectedFile);
-        return state.bribeHistory.filter(b => b.day === d1 || b.day === d2);
+        return state.bribeHistory.filter(b => b.originDay === d1 || b.originDay === d2);
       })()
     : state.bribeHistory;
 
@@ -100,7 +100,7 @@ const TacticalBoard: React.FC<TacticalBoardProps> = ({
                 'border-green-600 bg-green-600/10'
               }`}>
                 <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold uppercase tracking-wider">Día {bribe.day}</span>
+                  <span className="font-bold uppercase tracking-wider">Día {bribe.originDay}</span>
                   <span className={`font-bold uppercase text-[9px] px-1 ${
                     bribe.status === 'pending' ? 'text-yellow-400' :
                     bribe.status === 'on-hold'  ? 'text-orange-400' :
@@ -166,7 +166,7 @@ const TacticalBoard: React.FC<TacticalBoardProps> = ({
               }).length;
               const bribeCount = (() => {
                 const [d1, d2] = getDaysForLevel(file.level);
-                return state.bribeHistory.filter(b => b.day === d1 || b.day === d2).length;
+                return state.bribeHistory.filter(b => b.originDay === d1 || b.originDay === d2).length;
               })();
               return (
                 <button
@@ -283,7 +283,7 @@ const TacticalBoard: React.FC<TacticalBoardProps> = ({
               ? state.levelCulprits.find(c => c.evidenceId === selectedCulpritId)
               : null;
             const [d1, d2] = culprit ? getDaysForLevel(culprit.level) : [0, 0];
-            const bribe = state.bribeHistory.find(b => b.day === d1 || b.day === d2);
+            const bribe = state.bribeHistory.find(b => b.originDay === d1 || b.originDay === d2);
 
             if (!culprit || !culprit.revealed) return (
               <div className="flex-1 flex items-center justify-center">

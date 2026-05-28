@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { GameState, Evidence, CrimeType, CatalogueEntry, BribeRecord, LevelCulprit } from '../types/game';
 import { generateDayEvidences, EVIDENCE_TEMPLATES, AUTHORS, GRAVITY_RANGE, getRandomAge, FULL_NAME_BY_AUTHOR, REAL_EVIDENCE_POOL } from './gameEngine';
 import { AVLTree } from './avlTree';
+import { playAlexClip, ALEX_CLIPS } from '../hooks/useAlexVoice';
 
 export interface DayTransitionInfo {
   completedDay: number;
@@ -64,7 +65,7 @@ const MALE_FIRST_NAMES = ['Eduardo', 'Carlos', 'Juan', 'Alberto', 'Rodrigo', 'Fe
 const FEMALE_FIRST_NAMES = ['María', 'Sandra', 'Patricia', 'Claudia', 'Ana', 'Rosa', 'Gloria', 'Liliana', 'Esperanza'];
 const LAWYER_NAMES = ['Dr. Ramírez & Asociados', 'Lic. Gómez Defensa Legal', 'Dr. Pérez Abogados', 'Estudio Jurídico Vargas', 'Dra. Morales & Cía.'];
 
-const makeBribeRecord = (culprit: LevelCulprit, day: number): BribeRecord => {
+const makeBribeRecord = (culprit: LevelCulprit, day: number, originDay: number): BribeRecord => {
   const parts = culprit.fullName.split(' ');
   const lastName = parts.length >= 3 ? parts.slice(2).join(' ') : parts.slice(1).join(' ');
   const relIdx = Math.floor(Math.random() * 3); // 0=Padre, 1=Madre, 2=Abogado
@@ -82,6 +83,7 @@ const makeBribeRecord = (culprit: LevelCulprit, day: number): BribeRecord => {
   }
   return {
     day,
+    originDay,
     amount: 200 + Math.floor(Math.random() * 401),
     status: 'pending',
     sender,
@@ -96,6 +98,26 @@ const pickFullName = (usedNames: string[]): string => {
   const pool = available.length > 0 ? available : SUSPECT_FULL_NAMES;
   return pool[Math.floor(Math.random() * pool.length)];
 };
+
+// Context-aware penalty hints shown during the sentencing phase in the Investigation Map
+const PENALTY_HINTS: Partial<Record<CrimeType, string>> = {
+  'Injuria':
+    'Considera la difusión y el daño al buen nombre. Insulto en grupo grande o reiterado → Prisión 16-54 meses. Mensaje privado o aislado → Multa o Retractación pública. (Art. 220 C.P.)',
+  'Calumnia':
+    'La falsa imputación de un delito tiene penas mayores que la injuria. Si fue viral o causó consecuencias reales → Prisión 16-72 meses. Difusión limitada → Multa. (Art. 221 C.P.)',
+  'Suplantación':
+    '¿Hay perfil falso activo? → Eliminación inmediata. ¿Accedió a cuentas reales? → Prisión 48-96 meses. ¿Hubo ganancia económica? → Multa 100-1000 SMMLV. (Ley 1273/09, Art. 269C)',
+  'Hostigamiento':
+    'Evalúa la repetición del patrón. Conducta compulsiva y reiterada → Prisión 12-36 meses + Tratamiento psicológico. Contacto directo con la víctima → Medida de alejamiento. (Art. 134B C.P.)',
+  'Amenazas':
+    'Evalúa la credibilidad e inmediatez. Amenaza con plazo definido o recursos demostrados → Prisión 16-72 meses. Riesgo inminente para la víctima → Detención preventiva. (Art. 347 C.P.)',
+  'Concierto para delinquir':
+    'Crimen organizado: pena base 6-12 años. ¿Hay jerarquía o coordinación para delitos graves? → Agravante hasta 18 años. ¿Existe el grupo activo? → Disolución. (Art. 340 C.P.)',
+};
+
+// Narrative mastermind: the author whose crimes, when correctly classified, anchor the AVL root.
+// Appears across levels 1 (Injuria), 2 (Calumnia), and 4 (Hostigamiento) — age 19.
+export const TRUE_CULPRIT_AUTHOR = 'carlosm19'; // Carlos Andrés Méndez
 
 export function useGameState() {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
@@ -249,6 +271,7 @@ export function useGameState() {
       !state.isGameOver
     ) {
       setState(prev => ({ ...prev, tutorialStep: 3 }));
+      playAlexClip(ALEX_CLIPS.DIA_2_TABLERO);
       setAlexAlertMessage(
         `¡Bienvenido al Día 2, Detective ${state.playerName}! Hoy comenzarán a llegar los padres de los involucrados. Por eso el TABLERO TÁCTICO ya está disponible (ícono de capas en la barra inferior): úsalo para revisar perfiles de sospechosos, gestionar sobornos y hacer anotaciones. Mantén la integridad intacta y sigue clasificando con cuidado.`
       );
@@ -411,6 +434,7 @@ export function useGameState() {
           rootAgeExclusionRemaining = 6;
         }
         messageText = `✓ CASO INSERTADO EN EL ÁRBOL — Delito: ${selectedCrime} — Nodo #${newTotalNodes} — +$10`;
+        playAlexClip(ALEX_CLIPS.CASO_INSERTADO);
       } else {
         // Positive comment discarded
         messageText = `✓ COMENTARIO POSITIVO DESCARTADO — No es evidencia de delito — +$10`;
@@ -424,6 +448,7 @@ export function useGameState() {
         content: evidence.content,
         type: evidence.type,
         author: evidence.author,
+        penaltyHint: PENALTY_HINTS[selectedCrime],
       } : null;
 
       setState(prev => {
@@ -506,6 +531,7 @@ export function useGameState() {
           alexWarning = `⚠️ IMPORTANTE: Alex detectó que clasificaste mal esta evidencia. Se insertó en el árbol con la etiqueta elegida para que puedas revisar el error. Acepta este mensaje para continuar.`;
         } else if (!isPositiveComment && !selectedIsCrime) {
           alexWarning = `⚠️ IMPORTANTE: Clasificaste esta evidencia real como None. No se insertó en el árbol. Revisa los criterios de delito antes de continuar.`;
+          playAlexClip(ALEX_CLIPS.DELITO_COMO_NONE);
         } else if (isPositiveComment && selectedIsCrime) {
           // Positive comment mistakenly classified as crime: insert into tree anyway
           const newNodeId = `node-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
@@ -525,8 +551,9 @@ export function useGameState() {
             rootAgeExclusionAge = newRootAge;
             rootAgeExclusionRemaining = 6;
           }
-          incorrectCatalogueEntry = { evidenceId: evidence.id, crimeType: selectedCrime, day: state.day, level: state.level, content: evidence.content, type: evidence.type, author: evidence.author };
+          incorrectCatalogueEntry = { evidenceId: evidence.id, crimeType: selectedCrime, day: state.day, level: state.level, content: evidence.content, type: evidence.type, author: evidence.author, isFalseEvidence: true };
           alexWarning = `⚠️ IMPORTANTE: Este comentario es positivo, pero lo marcaste como delito. Se insertó en el árbol con la etiqueta elegida. Revisa tu criterio en la próxima clasificación.`;
+          playAlexClip(ALEX_CLIPS.POSITIVO_COMO_DELITO);
         }
 
         const remaining = state.evidenceCollected.filter(e => e.id !== evidenceId);
@@ -642,8 +669,7 @@ export function useGameState() {
     const nextLevel = dayTransitionInfo.nextLevel;
     const completedDay = dayTransitionInfo.completedDay;
 
-    // At the end of a complete level (every 2 days): reset the tree entirely.
-    // Within a level, carry the full tree to the next day.
+    // The tree grows continuously across all days and levels — never reset.
     const trimmedTree = state.tree ?? null;
 
     const isEndOfLevel = completedDay % 2 === 0;
@@ -695,7 +721,7 @@ export function useGameState() {
     );
     const shouldOfferBribe = nextDay >= 2 && eligibleForBribe.length > 0 && Math.random() < 0.5;
     const bribeRecord = shouldOfferBribe
-      ? makeBribeRecord(eligibleForBribe[Math.floor(Math.random() * eligibleForBribe.length)], nextDay)
+      ? makeBribeRecord(eligibleForBribe[Math.floor(Math.random() * eligibleForBribe.length)], nextDay, completedDay)
       : null;
 
     setState(prev => ({
@@ -703,9 +729,9 @@ export function useGameState() {
       money: dayTransitionInfo.moneyAfter,
       day: nextDay,
       level: nextLevel,
-      tree: isEndOfLevel ? null : trimmedTree,
-      rootAgeExclusionAge: isEndOfLevel ? null : prev.rootAgeExclusionAge,
-      rootAgeExclusionRemaining: isEndOfLevel ? 0 : prev.rootAgeExclusionRemaining,
+      tree: trimmedTree,
+      rootAgeExclusionAge: prev.rootAgeExclusionAge,
+      rootAgeExclusionRemaining: prev.rootAgeExclusionRemaining,
       levelCulprits: updatedCulprits,
       evidenceCollected: newEvidences,
       currentEvidence: newEvidences[0] || null,
@@ -803,14 +829,34 @@ export function useGameState() {
 
   const jailCulprit = (evidenceId: string) => {
     const culprit = state.levelCulprits.find(c => c.evidenceId === evidenceId);
+
+    // 30% random bribe trigger when jailing on day >= 2 and no pending offer
+    const shouldBribe =
+      state.day >= 2 &&
+      !state.pendingBribeOffer &&
+      !!culprit &&
+      Math.random() < 0.3;
+    const bribeRecord = shouldBribe && culprit ? makeBribeRecord(culprit, state.day, state.day) : null;
+
     setState(prev => ({
       ...prev,
       integrity: Math.min(100, prev.integrity + 5),
       levelCulprits: prev.levelCulprits.map(c =>
         c.evidenceId === evidenceId ? { ...c, verdict: 'jailed' as const } : c
       ),
+      ...(bribeRecord ? {
+        pendingBribeOffer: bribeRecord,
+        bribeHistory: [...prev.bribeHistory, bribeRecord],
+      } : {}),
     }));
+
     setTimedMessage(`Sospechoso ${culprit?.fullName ?? ''} enviado a prisión. Integridad +5%.`);
+
+    if (bribeRecord && culprit) {
+      setAlexAlertMessage(
+        `📬 ¡Detective ${state.playerName}, correo urgente sobre el caso de ${culprit.fullName}!`
+      );
+    }
   };
 
   const dismissCulprit = (evidenceId: string) => {
@@ -825,29 +871,34 @@ export function useGameState() {
     setTimedMessage(`Sospechoso ${culprit?.fullName ?? ''} desestimado del caso. Integridad -10%.`);
   };
 
-  const submitFinalVerdict = (isGuilty: boolean) => {
-    if (isGuilty) {
-      if (state.hasAcceptedBribe) {
-        setState(prev => ({
-          ...prev,
-          isGameOver: true,
-          gameOverReason: 'Veredicto correcto — pero Asuntos Internos descubrió los sobornos. Arrestado por corrupción y prevaricato. Valeria no obtuvo justicia.',
-          gameOverType: 'corrupcion',
-        }));
-      } else {
-        setState(prev => ({
-          ...prev,
-          isGameOver: true,
-          gameOverReason: 'VICTORIA: Valeria está a salvo. Has identificado al culpable, construido el caso y mantenido tu integridad. La justicia fue cumplida.',
-          gameOverType: 'victoria',
-        }));
-      }
+  const submitFinalVerdict = () => {
+    const rootEvidenceId = state.tree?.evidenceId ?? null;
+    const rootEntry = rootEvidenceId
+      ? state.cataloguedLog.find(e => e.evidenceId === rootEvidenceId)
+      : null;
+    const rootAuthor = rootEntry?.author ?? null;
+    const correctCulpritAtRoot = rootAuthor === TRUE_CULPRIT_AUTHOR;
+
+    if (!correctCulpritAtRoot) {
+      setState(prev => ({
+        ...prev,
+        isGameOver: true,
+        gameOverReason: `El árbol señala a "@${rootAuthor ?? 'desconocido'}" como culpable principal. Las clasificaciones incorrectas generaron rotaciones AVL que desplazaron al verdadero responsable de la raíz. Valeria no obtuvo justicia.`,
+        gameOverType: 'veredicto',
+      }));
+    } else if (state.hasAcceptedBribe) {
+      setState(prev => ({
+        ...prev,
+        isGameOver: true,
+        gameOverReason: 'Identificaste al culpable correcto, pero Asuntos Internos descubrió que aceptaste sobornos durante la investigación. Arrestado por corrupción y prevaricato. Valeria no obtuvo justicia.',
+        gameOverType: 'corrupcion',
+      }));
     } else {
       setState(prev => ({
         ...prev,
         isGameOver: true,
-        gameOverReason: 'Veredicto incorrecto. El agresor escapó por falta de pruebas. Caso desestimado. Valeria sigue sin justicia.',
-        gameOverType: 'veredicto',
+        gameOverReason: 'VICTORIA: Valeria está a salvo. Identificaste al culpable real, construiste el árbol con precisión y mantuviste tu integridad. La justicia fue cumplida.',
+        gameOverType: 'victoria',
       }));
     }
   };
@@ -880,6 +931,27 @@ export function useGameState() {
   const acknowledgeAlexAlert = () => {
     setAlexAlertMessage('');
   };
+
+  // Removes a false evidence entry (positive comment wrongly classified as crime) from the catalogue
+  const removeFalseEvidence = useCallback((evidenceId: string) => {
+    setState(prev => ({
+      ...prev,
+      cataloguedLog: prev.cataloguedLog.filter(e => e.evidenceId !== evidenceId),
+    }));
+    setTimedMessage('Evidencia descartada — comentario eliminado del expediente.');
+  }, []);
+
+  const checkCanEndGame = useCallback((): { canEnd: boolean; blockingReason: string } => {
+    if (state.currentEvidence !== null || state.evidenceCollected.length > 0)
+      return { canEnd: false, blockingReason: '⚠ Clasifica todos los comentarios pendientes primero.' };
+    if (state.levelCulprits.some(c => c.verdict === 'pending'))
+      return { canEnd: false, blockingReason: '⚠ Hay sospechosos sin sentencia. Ve al Tablero Táctico.' };
+    if (state.pendingBribeOffer !== null)
+      return { canEnd: false, blockingReason: '⚠ Tienes un soborno pendiente de responder.' };
+    if (alexAlertMessage !== '')
+      return { canEnd: false, blockingReason: '⚠ Hay un mensaje de Alex sin leer. Acéptalo para continuar.' };
+    return { canEnd: true, blockingReason: '' };
+  }, [state.currentEvidence, state.evidenceCollected.length, state.levelCulprits, state.pendingBribeOffer, alexAlertMessage]);
 
   const resetGame = () => {
     setState(INITIAL_STATE);
@@ -964,6 +1036,8 @@ export function useGameState() {
     dismissCulprit,
     addSuspect,
     penalizeEvidence,
+    removeFalseEvidence,
+    checkCanEndGame,
     submitFinalVerdict,
     resetGame,
     saveGame,

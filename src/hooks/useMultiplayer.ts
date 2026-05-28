@@ -10,7 +10,7 @@ export function useMultiplayer() {
 
   useEffect(() => {
     if (!socket) {
-      // Detecta automáticamente si estás en localhost o en la IP de otra PC (ej. 192.168.1.15)
+      // Fuerza el uso exclusivo de la red local (Wi-Fi)
       const serverUrl = `http://${window.location.hostname}:3001`;
       socket = io(serverUrl);
     }

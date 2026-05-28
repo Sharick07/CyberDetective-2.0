@@ -10,6 +10,7 @@ export interface Evidence {
   gravity: number; // 1-10
   correctCrime: CrimeType;
   details: string;
+  penaltyHint?: string; // context-aware hint shown during the sentencing phase
 }
 
 export interface GameNode {
@@ -31,10 +32,13 @@ export interface CatalogueEntry {
   content: string;
   type: Evidence['type'];
   author: string;
+  penaltyHint?: string;    // hint shown in the sentencing panel (inherited from classification)
+  isFalseEvidence?: boolean; // true when a positive/None comment was wrongly classified as a crime
 }
 
 export interface BribeRecord {
-  day: number;
+  day: number;       // day the bribe email was received (state.day when triggered)
+  originDay: number; // day the culprit was sentenced (source of this bribe)
   amount: number;
   status: 'pending' | 'accepted' | 'rejected' | 'on-hold';
   sender: string;           // e.g. "Eduardo Méndez"

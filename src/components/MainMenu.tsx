@@ -8,18 +8,18 @@ interface MainMenuProps {
   setShowSettings: (v: boolean) => void;
   loadGame: () => Promise<boolean>;
   playerName: string;
+  isVoiceEnabled: boolean;
+  onToggleVoice: () => void;
 }
 
-/**
- * Menú principal del juego.
- * Muestra el perfil del detective, opciones de inicio/carga y configuración.
- */
 const MainMenu: React.FC<MainMenuProps> = ({
   onNavigate,
   setShowHelp,
   setShowSettings,
   loadGame,
   playerName,
+  isVoiceEnabled,
+  onToggleVoice,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [avatarIdx, setAvatarIdx] = useState(0);
@@ -49,7 +49,7 @@ const MainMenu: React.FC<MainMenuProps> = ({
     return (
       <div className="flex-1 flex flex-col justify-end items-start h-full p-4">
         <div className="retro-border px-4 py-3 bg-black text-cyber-orange flex items-center justify-between w-72 shadow-lg shadow-cyber-orange/20">
-          <span className="text-xs font-bold uppercase truncate tracking-wider">CyberDetective (Min.)</span>
+          <span className="text-xs font-bold uppercase truncate tracking-wider">TraceBack (Min.)</span>
           <div className="flex gap-2 shrink-0">
             <button onClick={() => setIsMinimized(false)} className="text-xs border border-cyber-orange px-2 hover:bg-cyber-orange hover:text-black transition-colors">□</button>
             <button onClick={handleClose} className="text-xs border border-cyber-orange px-1.5 hover:bg-red-500 hover:text-white hover:border-red-500 transition-colors">×</button>
@@ -92,7 +92,7 @@ const MainMenu: React.FC<MainMenuProps> = ({
               <button onClick={handleClose} className="text-xs border border-cyber-orange px-1 hover:bg-red-500 hover:text-white hover:border-red-500 transition-colors">×</button>
             </div>
             <div className="border-4 border-cyber-orange p-3 mb-2 inline-block bg-cyber-orange/5">
-              <h1 className="text-4xl md:text-5xl font-black tracking-widest uppercase text-cyber-orange">CyberDetective</h1>
+              <h1 className="text-4xl md:text-5xl font-black tracking-widest uppercase text-cyber-orange">TraceBack</h1>
             </div>
             <h2 className="text-2xl font-bold mb-1 uppercase text-white">El Árbol de la Verdad</h2>
             <p className="text-xs uppercase tracking-widest opacity-70">Sistema de investigación de ciberacoso</p>
@@ -132,6 +132,17 @@ const MainMenu: React.FC<MainMenuProps> = ({
             >
               <span className="block text-base">Inclusión y Ajustes</span>
               <span className="block text-xs mt-1 opacity-80">(Accesibilidad, selección apariencia)</span>
+            </button>
+            <button
+              onClick={onToggleVoice}
+              className="w-full max-w-lg py-3 border-2 border-cyber-orange text-cyber-orange font-bold hover:bg-cyber-orange hover:text-black transition-all uppercase"
+            >
+              <span className="block text-base">
+                {isVoiceEnabled ? '🔊 Voz de Alex: ON' : '🔇 Voz de Alex: OFF'}
+              </span>
+              <span className="block text-xs mt-1 opacity-80">
+                {isVoiceEnabled ? 'Clic para silenciar los audios del detective' : 'Clic para activar los audios del detective'}
+              </span>
             </button>
             <button
               onClick={handleClose}

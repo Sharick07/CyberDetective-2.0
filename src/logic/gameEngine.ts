@@ -441,103 +441,94 @@ export const generateEvidence = (level: number, excludeIds: string[] = [], exclu
 
 export const generateDayEvidences = (day: number, excludeIds: string[], excludeAge: number | null = null): Evidence[] => {
   const gameLevel = Math.min(5, Math.max(1, Math.ceil(day / 2)));
-  const levelPool = REAL_EVIDENCE_POOL[gameLevel];
-
-  if (levelPool && levelPool.length > 0) {
-    const count = EVIDENCES_PER_LEVEL[Math.min(5, Math.max(1, day))] ?? 2;
-    const result: Evidence[] = [];
-    const usedIds = [...excludeIds];
-    const [minG, maxG] = GRAVITY_RANGE[Math.min(5, Math.max(1, day))];
-    // Shuffle pool and pick `count` distinct items
-    const shuffled = [...levelPool].sort(() => Math.random() - 0.5);
-    for (let i = 0; i < Math.min(count, shuffled.length); i++) {
-      const item = shuffled[i];
-      let id: string;
-      do { id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`; }
-      while (usedIds.includes(id));
-      const gravity = minG + Math.floor(Math.random() * (maxG - minG + 1));
-      const groupTag = item.type === 'Chat'
-        ? `[Grupo de ${300 + Math.floor(Math.random() * 701)} miembros] `
-        : '';
-      result.push({
-        id,
-        type: item.type,
-        author: item.author,
-        age: item.age,
-        content: `${groupTag}"@${item.author}: ${item.content}"`,
-        timestamp: new Date().toLocaleTimeString(),
-        gravity,
-        correctCrime: item.crime,
-        details: item.details,
-      });
-      usedIds.push(id);
-    }
-    return result;
-  }
-
-  // Fallback — template-based generation for levels not yet in REAL_EVIDENCE_POOL
-  let availableCrimeTypes: string[] = ['None'];
-  if (day <= 2) {
-    availableCrimeTypes.push('Injuria');
-  } else if (day <= 4) {
-    availableCrimeTypes.push('Injuria', 'Calumnia');
-  } else if (day <= 6) {
-    availableCrimeTypes.push('Injuria', 'Calumnia', 'Suplantación');
-  } else if (day <= 8) {
-    availableCrimeTypes.push('Injuria', 'Calumnia', 'Suplantación', 'Hostigamiento');
-  } else {
-    availableCrimeTypes.push('Injuria', 'Calumnia', 'Suplantación', 'Hostigamiento', 'Amenazas');
-  }
-
-  // Filter templates to only include available crime types
-  const filteredTemplates: { type: Evidence['type']; content: string[]; crime: string; details: string }[] = [];
-  
-  Object.entries(EVIDENCE_TEMPLATES).forEach(([level, templates]) => {
-    templates.forEach(template => {
-      if (availableCrimeTypes.includes(template.crime)) {
-        filteredTemplates.push(template);
-      }
-    });
-  });
-
-  const count = EVIDENCES_PER_LEVEL[Math.min(5, Math.max(1, day))] ?? 2;
-  const result: Evidence[] = [];
+  const count = EVIDENCES_PER_LEVEL[Math.min(5, Math.max(1, gameLevel))] ?? 2;
+  const [minG, maxG] = GRAVITY_RANGE[Math.min(5, Math.max(1, gameLevel))];
   const usedIds = [...excludeIds];
-  
-  for (let i = 0; i < count; i++) {
-    // Generate evidence using filtered templates
-    const template = filteredTemplates[Math.floor(Math.random() * filteredTemplates.length)];
-    const content = template.content[Math.floor(Math.random() * template.content.length)];
-    const author = AUTHORS[Math.floor(Math.random() * AUTHORS.length)];
-    const age = getRandomAge(excludeAge);
-    const level = Math.min(5, Math.max(1, day));
-    const [minG, maxG] = GRAVITY_RANGE[level];
-    const gravity = minG + Math.floor(Math.random() * (maxG - minG + 1));
 
-    // Unique ID that is never in excludeIds
+  // Helper: converts a RealEvidenceItem to a stamped Evidence, tracking usedIds
+  const mkEvidence = (item: RealEvidenceItem): Evidence => {
     let id: string;
-    do {
-      id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
-    } while (excludeIds.includes(id));
-
-    const groupTag = template.type === 'Chat'
+    do { id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`; }
+    while (usedIds.includes(id));
+    usedIds.push(id);
+    const gravity = minG + Math.floor(Math.random() * (maxG - minG + 1));
+    const groupTag = item.type === 'Chat'
       ? `[Grupo de ${300 + Math.floor(Math.random() * 701)} miembros] `
       : '';
+    return {
+      id,
+      type: item.type,
+      author: item.author,
+      age: item.age,
+      content: `${groupTag}"@${item.author}: ${item.content}"`,
+      timestamp: new Date().toLocaleTimeString(),
+      gravity,
+      correctCrime: item.crime,
+      details: item.details,
+    };
+  };
 
+  const currentPool = REAL_EVIDENCE_POOL[gameLevel];
+  if (currentPool && currentPool.length > 0) {
+    // Mix current level pool with up to 2 items from each prior level (difficulty escalation)
+    let pool: RealEvidenceItem[] = [...currentPool];
+    for (let l = 1; l < gameLevel; l++) {
+      const lp = REAL_EVIDENCE_POOL[l];
+      if (lp?.length) pool.push(...[...lp].sort(() => Math.random() - 0.5).slice(0, 2));
+    }
+    return pool
+      .sort(() => Math.random() - 0.5)
+      .slice(0, count)
+      .map(mkEvidence);
+  }
+
+  // Fallback — level 5: no REAL_EVIDENCE_POOL entry, use templates + lower-level mix
+  const result: Evidence[] = [];
+
+  // Inject real items from previous levels first (up to 2 per level, max 2 total)
+  const lowerPool: RealEvidenceItem[] = [];
+  for (let l = 1; l < gameLevel; l++) {
+    const lp = REAL_EVIDENCE_POOL[l];
+    if (lp?.length) lowerPool.push(...[...lp].sort(() => Math.random() - 0.5).slice(0, 2));
+  }
+  lowerPool
+    .sort(() => Math.random() - 0.5)
+    .slice(0, Math.min(2, lowerPool.length))
+    .forEach(item => result.push(mkEvidence(item)));
+
+  // Fill the rest with template-based items (Concierto and other crime types)
+  const allCrimes = ['None', 'Injuria', 'Calumnia', 'Suplantación', 'Hostigamiento', 'Amenazas', 'Concierto para delinquir'];
+  const filteredTemplates: { type: Evidence['type']; content: string[]; crime: string; details: string }[] = [];
+  Object.values(EVIDENCE_TEMPLATES).forEach(templates => {
+    templates.forEach(t => { if (allCrimes.includes(t.crime)) filteredTemplates.push(t); });
+  });
+
+  const needed = count - result.length;
+  for (let i = 0; i < needed; i++) {
+    const t = filteredTemplates[Math.floor(Math.random() * filteredTemplates.length)];
+    const content = t.content[Math.floor(Math.random() * t.content.length)];
+    const author = AUTHORS[Math.floor(Math.random() * AUTHORS.length)];
+    const age = getRandomAge(excludeAge);
+    const gravity = minG + Math.floor(Math.random() * (maxG - minG + 1));
+    let id: string;
+    do { id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`; }
+    while (usedIds.includes(id));
+    usedIds.push(id);
+    const groupTag = t.type === 'Chat'
+      ? `[Grupo de ${300 + Math.floor(Math.random() * 701)} miembros] `
+      : '';
     result.push({
       id,
-      type: template.type,
+      type: t.type,
       author,
       age,
       content: `${groupTag}"${author}: ${content}"`,
       timestamp: new Date().toLocaleTimeString(),
       gravity,
-      correctCrime: template.crime as any,
-      details: template.details,
+      correctCrime: t.crime as CrimeType,
+      details: t.details,
     });
-    
-    usedIds.push(id);
   }
-  
-  return result;
+
+  return result.sort(() => Math.random() - 0.5);
 };

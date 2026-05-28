@@ -12,7 +12,8 @@ interface CaseTreeScreenProps {
   classifyCrime: (id: string, crime: CrimeType) => void;
   saveGame: () => void;
   startDayTransition: () => void;
-  submitFinalVerdict: (guilty: boolean) => void;
+  checkCanEndGame: () => { canEnd: boolean; blockingReason: string };
+  submitFinalVerdict: () => void;
   acceptBribe: () => void;
   holdBribe: () => void;
   rejectBribe: () => void;
@@ -29,6 +30,7 @@ const CaseTreeScreen: React.FC<CaseTreeScreenProps> = ({
   classifyCrime,
   saveGame,
   startDayTransition,
+  checkCanEndGame,
   submitFinalVerdict,
   acceptBribe,
   holdBribe,
@@ -228,14 +230,15 @@ const CaseTreeScreen: React.FC<CaseTreeScreenProps> = ({
               >✕</button>
             </div>
             <div className="bg-gray-100 border-b border-gray-300 px-4 py-3 space-y-1 text-[11px] text-gray-700 shrink-0">
-              <p><span className="font-bold w-16 inline-block">De:</span> {state.pendingBribeOffer.sender}</p>
-              <p><span className="font-bold w-16 inline-block">Cargo:</span> {state.pendingBribeOffer.relationship}</p>
-              <p><span className="font-bold w-16 inline-block">Para:</span> Detective {state.playerName} — Fiscalía de NetCity</p>
-              <p><span className="font-bold w-16 inline-block">Asunto:</span> Solicitud urgente sobre el caso de {state.pendingBribeOffer.targetSuspect}</p>
+              <p><span className="font-bold w-24 inline-block">De:</span> {state.pendingBribeOffer.sender}</p>
+              <p><span className="font-bold w-24 inline-block">Cargo:</span> {state.pendingBribeOffer.relationship}</p>
+              <p><span className="font-bold w-24 inline-block">Para:</span> Detective {state.playerName} — Fiscalía de NetCity</p>
+              <p><span className="font-bold w-24 inline-block">Ref. sentencia:</span> <span className="font-semibold text-gray-900">Día {state.pendingBribeOffer.originDay}</span></p>
+              <p><span className="font-bold w-24 inline-block">Asunto:</span> Solicitud urgente — caso de {state.pendingBribeOffer.targetSuspect}</p>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4 text-[12px] text-gray-800 leading-relaxed space-y-3">
               <p>Estimado/a Detective {state.playerName},</p>
-              <p>Me dirijo a usted en representación de <strong>{state.pendingBribeOffer.targetSuspect}</strong>, involucrado/a en su investigación actual.</p>
+              <p>Me dirijo a usted en representación de <strong>{state.pendingBribeOffer.targetSuspect}</strong>, procesado/a el <strong>Día {state.pendingBribeOffer.originDay}</strong> en el marco de su investigación.</p>
               <p>Entiendo la presión que conlleva su trabajo. Le propongo de manera discreta la suma de <strong className="text-green-700">${state.pendingBribeOffer.amount}</strong> a cambio de que reconsidere la participación de {state.pendingBribeOffer.targetSuspect} en este expediente y retire los cargos que pesan sobre él/ella.</p>
               <p className="italic text-gray-500">&quot;Nadie tiene que enterarse. Esta conversación nunca ocurrió.&quot;</p>
               <p>Quedo a su disposición,<br /><strong>{state.pendingBribeOffer.sender}</strong><br /><span className="text-[10px] text-gray-400">{state.pendingBribeOffer.relationship}</span></p>
@@ -295,7 +298,7 @@ const CaseTreeScreen: React.FC<CaseTreeScreenProps> = ({
             </div>
           </div>
         </div>
-        <div className="retro-border flex-1 flex flex-col bg-black overflow-hidden">
+        <div data-tutorial-id="tutorial-evidence-panel" className="retro-border flex-1 flex flex-col bg-black overflow-hidden">
           <div className="panel-header">Evidencias Pendientes ({state.evidenceCollected.length})</div>
           <div className="p-2 overflow-y-auto flex-1 space-y-2 cyber-scroll">
             {state.evidenceCollected.map(ev => (
@@ -322,7 +325,7 @@ const CaseTreeScreen: React.FC<CaseTreeScreenProps> = ({
 
       {/* Panel Central: Árbol AVL */}
       <section className="flex-1 flex flex-col space-y-2">
-        <div className="retro-border flex-1 flex flex-col bg-black grid-bg relative overflow-hidden">
+        <div data-tutorial-id="tutorial-tree-panel" className="retro-border flex-1 flex flex-col bg-black grid-bg relative overflow-hidden">
           <div className="panel-header">
             Árbol de la Verdad
             <span className="text-[10px] font-normal opacity-60 ml-3">
@@ -427,7 +430,7 @@ const CaseTreeScreen: React.FC<CaseTreeScreenProps> = ({
         {/* Action bar */}
         <div className="retro-border h-24 flex items-center p-2 bg-black space-x-2">
           <div className="flex-1 grid grid-cols-4 gap-2">
-            <button onClick={handleClassify} className="btn-primary col-span-2 h-full text-lg">
+            <button data-tutorial-id="tutorial-classify-btn" onClick={handleClassify} className="btn-primary col-span-2 h-full text-lg">
               CLASIFICAR E INSERTAR
             </button>
             <button
@@ -477,7 +480,7 @@ const CaseTreeScreen: React.FC<CaseTreeScreenProps> = ({
 
       {/* Panel Derecho: Clasificación de delito */}
       <section className="w-1/3 flex flex-col space-y-2">
-        <div className="retro-border flex-1 flex flex-col bg-black overflow-hidden">
+        <div data-tutorial-id="tutorial-crime-panel" className="retro-border flex-1 flex flex-col bg-black overflow-hidden">
           <div className="panel-header">Clasificación de Delito</div>
           <div className="p-4 flex-1 min-h-0 flex flex-col gap-4 bg-[#0a0a0a]">
             {state.currentEvidence ? (
@@ -535,20 +538,42 @@ const CaseTreeScreen: React.FC<CaseTreeScreenProps> = ({
         </div>
 
         {state.level === 5 && (
-          <div className="retro-border h-32 bg-black p-4 flex flex-col gap-2">
-            <p className="text-[10px] font-bold uppercase text-red-500">
-              VEREDICTO FINAL: ¿Es culpable el sospechoso principal?
+          <div className="retro-border bg-black p-3 flex flex-col gap-1.5">
+            <p className="text-[10px] font-bold uppercase text-red-500 leading-tight">
+              ⚖ VEREDICTO FINAL — El Árbol de la Verdad
             </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => submitFinalVerdict(true)}
-                className="flex-1 bg-green-900 border border-green-500 text-green-500 py-2 hover:bg-green-500 hover:text-black"
-              >CULPABLE</button>
-              <button
-                onClick={() => submitFinalVerdict(false)}
-                className="flex-1 bg-red-900 border border-red-500 text-red-500 py-2 hover:bg-red-500 hover:text-black"
-              >INOCENTE</button>
-            </div>
+            {(() => {
+              const rootEvidenceId = state.tree?.evidenceId ?? null;
+              const rootEntry = rootEvidenceId
+                ? state.cataloguedLog.find(e => e.evidenceId === rootEvidenceId)
+                : null;
+              const { canEnd, blockingReason } = checkCanEndGame();
+              return (
+                <>
+                  <p className="text-[9px] text-cyber-orange/70 leading-tight">
+                    Raíz:{' '}
+                    <span className="font-bold text-cyber-orange">
+                      {rootEntry ? `@${rootEntry.author}` : 'árbol vacío'}
+                    </span>
+                  </p>
+                  {blockingReason && (
+                    <p className="text-[8px] text-yellow-400 italic leading-tight">{blockingReason}</p>
+                  )}
+                  <button
+                    onClick={submitFinalVerdict}
+                    disabled={!canEnd}
+                    className={cn(
+                      'w-full py-1.5 text-xs font-bold uppercase border transition-colors',
+                      canEnd
+                        ? 'bg-red-950 border-red-600 text-red-300 hover:bg-red-700 hover:text-white'
+                        : 'bg-black border-gray-700 text-gray-600 cursor-not-allowed',
+                    )}
+                  >
+                    {canEnd ? '⚖ EMITIR VEREDICTO' : '⏳ ESCRITORIO PENDIENTE'}
+                  </button>
+                </>
+              );
+            })()}
           </div>
         )}
       </section>

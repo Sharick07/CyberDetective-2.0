@@ -5,17 +5,19 @@ import { useGameState } from './logic/useGameState';
 import { Screen } from './types/screens';
 import { getCurrentGameDate, getCurrentGameTime } from './constants/gameHelpers';
 import { useSpeech } from './hooks/useSpeech';
+import { useAlexVoice } from './hooks/useAlexVoice';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import BootScreen from './components/BootScreen';
 import IntroScreen from './components/IntroScreen';
 import MainMenu from './components/MainMenu';
-import GameOverScreen from './components/GameOverScreen';
 import CaseTreeScreen from './components/CaseTreeScreen';
 import InvestigationMap from './components/InvestigationMap';
 import TacticalBoard from './components/TacticalBoard';
 import DayTransitionModal from './components/DayTransitionModal';
 import LobbyScreen from './components/LobbyScreen';
+import TutorialOverlay from './components/TutorialOverlay';
+import FinalReport from './components/FinalReport';
 
 export default function App() {
   const {
@@ -39,6 +41,8 @@ export default function App() {
     dismissCulprit,
     addSuspect,
     penalizeEvidence,
+    removeFalseEvidence,
+    checkCanEndGame,
     submitFinalVerdict,
     saveGame,
     loadGame,
@@ -54,6 +58,7 @@ export default function App() {
   const [showPauseRules, setShowPauseRules] = useState(false);
   const [isMuted, setIsMuted]             = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
+  const [tutorialDone, setTutorialDone]   = useState(false);
 
   const isMutedRef        = React.useRef(false);
   const isVoiceEnabledRef = React.useRef(true);
@@ -61,6 +66,31 @@ export default function App() {
   const buttonAudioRef    = React.useRef<HTMLAudioElement | null>(null);
 
   const { speakSystem, speakAlex } = useSpeech(isMutedRef, isVoiceEnabledRef);
+  const { play: playAlexAudio } = useAlexVoice(isVoiceEnabled);
+
+  // Show interactive tutorial on day 1 before any evidence is processed
+  const isTutorialActive =
+    !tutorialDone &&
+    state.tutorialStep >= 1 &&
+    state.day === 1 &&
+    state.processedEvidenceIds.length === 0 &&
+    screen === 'case-tree';
+
+  // Pause timer while tutorial is open
+  useEffect(() => {
+    if (isTutorialActive) pauseGame();
+  }, [isTutorialActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTutorialComplete = () => {
+    setTutorialDone(true);
+    acknowledgeAlexAlert();
+    resumeGame();
+  };
+
+  const handleResetGame = () => {
+    setTutorialDone(false);
+    resetGame();
+  };
 
   const toggleFullscreen = React.useCallback(() => {
     if (!document.fullscreenElement) {
@@ -140,13 +170,13 @@ export default function App() {
     switch (screen) {
       case 'boot':             return 'SISTEMA INICIANDO...';
       case 'intro':            return 'AUTENTICACIÓN DE USUARIO';
-      case 'main-menu':        return `CyberDetective: Terminal de ${state.playerName || 'Alex'}`;
-      case 'case-tree':        return 'CyberDetective: El Árbol de la Verdad';
-      case 'investigation-map': return 'CyberDetective: Mapa de Investigación';
-      case 'tactical-board':   return 'CyberDetective: Pizarra Táctica';
+      case 'main-menu':        return `TraceBack: Terminal de ${state.playerName || 'Alex'}`;
+      case 'case-tree':        return 'TraceBack: El Árbol de la Verdad';
+      case 'investigation-map': return 'TraceBack: Mapa de Investigación';
+      case 'tactical-board':   return 'TraceBack: Pizarra Táctica';
       case 'game-over':        return 'SISTEMA BLOQUEADO';
-      case 'multiplayer-lobby' as any: return 'CyberDetective: Sala Competitiva';
-      default:                 return 'CyberDetective';
+      case 'multiplayer-lobby' as any: return 'TraceBack: Sala Competitiva';
+      default:                 return 'TraceBack';
     }
   };
 
@@ -190,6 +220,8 @@ export default function App() {
                 setShowSettings={setShowSettings}
                 loadGame={loadGame}
                 playerName={state.playerName}
+                isVoiceEnabled={isVoiceEnabled}
+                onToggleVoice={() => setIsVoiceEnabled(v => !v)}
               />
             )}
             {screen === 'case-tree' && (
@@ -200,6 +232,7 @@ export default function App() {
                 classifyCrime={classifyCrime}
                 saveGame={saveGame}
                 startDayTransition={startDayTransition}
+                checkCanEndGame={checkCanEndGame}
                 submitFinalVerdict={submitFinalVerdict}
                 acceptBribe={acceptBribe}
                 holdBribe={holdBribe}
@@ -214,6 +247,7 @@ export default function App() {
                 addSuspect={addSuspect}
                 penalizedEvidenceIds={state.penalizedEvidenceIds}
                 onPenalize={penalizeEvidence}
+                removeFalseEvidence={removeFalseEvidence}
               />
             )}
             {screen === 'tactical-board' && (
@@ -229,9 +263,9 @@ export default function App() {
               />
             )}
             {screen === 'game-over' && (
-              <GameOverScreen
-                reason={state.gameOverReason}
-                onRestart={() => { resetGame(); setScreen('boot'); }}
+              <FinalReport
+                state={state}
+                onRestart={() => { handleResetGame(); setScreen('boot'); }}
               />
             )}
             {screen === 'multiplayer-lobby' as any && (
@@ -254,6 +288,15 @@ export default function App() {
           screen={screen}
           onNavigate={setScreen}
           day={state.day}
+        />
+      )}
+
+      {/* Interactive tutorial overlay — shown on first play, day 1, before any classification */}
+      {isTutorialActive && (
+        <TutorialOverlay
+          playerName={state.playerName}
+          onComplete={handleTutorialComplete}
+          playAudio={playAlexAudio}
         />
       )}
 
@@ -321,7 +364,7 @@ export default function App() {
                   {showPauseRules ? 'Ocultar reglas' : 'Reglas del juego'}
                 </button>
                 <button
-                  onClick={() => { setShowPauseMenu(false); setShowPauseRules(false); resetGame(); setScreen('main-menu'); }}
+                  onClick={() => { setShowPauseMenu(false); setShowPauseRules(false); handleResetGame(); setScreen('main-menu'); }}
                   className="w-full h-12 text-lg flex items-center justify-center border border-red-700 text-red-500 hover:bg-red-900/30 transition-colors font-vt323 uppercase tracking-widest"
                 >
                   Menú Principal
