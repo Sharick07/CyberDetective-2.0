@@ -392,15 +392,6 @@ export const EVIDENCE_TEMPLATES: Record<number, { type: Evidence['type']; conten
   ]
 };
 
-// Number of evidences generated per day, by level
-const EVIDENCES_PER_LEVEL: Record<number, number> = {
-  1: 2,
-  2: 3,
-  3: 3,
-  4: 4,
-  5: 4,
-};
-
 // Gravity range per level (defines AVL insertion key)
 export const GRAVITY_RANGE: Record<number, [number, number]> = {
   1: [1, 2],
@@ -441,11 +432,13 @@ export const generateEvidence = (level: number, excludeIds: string[] = [], exclu
 
 export const generateDayEvidences = (day: number, excludeIds: string[], excludeAge: number | null = null): Evidence[] => {
   const gameLevel = Math.min(5, Math.max(1, Math.ceil(day / 2)));
-  const count = EVIDENCES_PER_LEVEL[Math.min(5, Math.max(1, gameLevel))] ?? 2;
   const [minG, maxG] = GRAVITY_RANGE[Math.min(5, Math.max(1, gameLevel))];
   const usedIds = [...excludeIds];
 
-  // Helper: converts a RealEvidenceItem to a stamped Evidence, tracking usedIds
+  // Batch size: random 10–15 evidences per day
+  const targetCount = 10 + Math.floor(Math.random() * 6);
+
+  // Helper: converts a RealEvidenceItem into a stamped Evidence, tracking usedIds
   const mkEvidence = (item: RealEvidenceItem): Evidence => {
     let id: string;
     do { id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`; }
@@ -468,67 +461,43 @@ export const generateDayEvidences = (day: number, excludeIds: string[], excludeA
     };
   };
 
-  const currentPool = REAL_EVIDENCE_POOL[gameLevel];
-  if (currentPool && currentPool.length > 0) {
-    // Mix current level pool with up to 2 items from each prior level (difficulty escalation)
-    let pool: RealEvidenceItem[] = [...currentPool];
-    for (let l = 1; l < gameLevel; l++) {
-      const lp = REAL_EVIDENCE_POOL[l];
-      if (lp?.length) pool.push(...[...lp].sort(() => Math.random() - 0.5).slice(0, 2));
-    }
-    return pool
-      .sort(() => Math.random() - 0.5)
-      .slice(0, count)
-      .map(mkEvidence);
-  }
-
-  // Fallback — level 5: no REAL_EVIDENCE_POOL entry, use templates + lower-level mix
-  const result: Evidence[] = [];
-
-  // Inject real items from previous levels first (up to 2 per level, max 2 total)
-  const lowerPool: RealEvidenceItem[] = [];
-  for (let l = 1; l < gameLevel; l++) {
+  // ── 1. Criminal pool: all real items from levels 1 … gameLevel ───────────
+  //    Uses <= so previous-level crimes stay in the mix as difficulty escalates.
+  const criminalPool: RealEvidenceItem[] = [];
+  for (let l = 1; l <= gameLevel; l++) {
     const lp = REAL_EVIDENCE_POOL[l];
-    if (lp?.length) lowerPool.push(...[...lp].sort(() => Math.random() - 0.5).slice(0, 2));
+    if (lp?.length) criminalPool.push(...lp);
   }
-  lowerPool
-    .sort(() => Math.random() - 0.5)
-    .slice(0, Math.min(2, lowerPool.length))
-    .forEach(item => result.push(mkEvidence(item)));
 
-  // Fill the rest with template-based items (Concierto and other crime types)
-  const allCrimes = ['None', 'Injuria', 'Calumnia', 'Suplantación', 'Hostigamiento', 'Amenazas', 'Concierto para delinquir'];
-  const filteredTemplates: { type: Evidence['type']; content: string[]; crime: string; details: string }[] = [];
+  // ── 2. Positive / noise pool: expand every None-type template entry ───────
+  //    Each template holds an array of content strings; we explode them into
+  //    individual RealEvidenceItem-shaped objects with anonymous authors so
+  //    they can flow through the same mkEvidence path.
+  const positivePool: RealEvidenceItem[] = [];
   Object.values(EVIDENCE_TEMPLATES).forEach(templates => {
-    templates.forEach(t => { if (allCrimes.includes(t.crime)) filteredTemplates.push(t); });
+    templates.forEach(t => {
+      if (t.crime !== 'None') return;
+      t.content.forEach(text => {
+        const author = AUTHORS[Math.floor(Math.random() * AUTHORS.length)];
+        positivePool.push({
+          fullName: author,
+          author,
+          age: getRandomAge(excludeAge),
+          content: text,
+          crime: 'None' as CrimeType,
+          type: t.type,
+          details: t.details,
+        });
+      });
+    });
   });
 
-  const needed = count - result.length;
-  for (let i = 0; i < needed; i++) {
-    const t = filteredTemplates[Math.floor(Math.random() * filteredTemplates.length)];
-    const content = t.content[Math.floor(Math.random() * t.content.length)];
-    const author = AUTHORS[Math.floor(Math.random() * AUTHORS.length)];
-    const age = getRandomAge(excludeAge);
-    const gravity = minG + Math.floor(Math.random() * (maxG - minG + 1));
-    let id: string;
-    do { id = `ev-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`; }
-    while (usedIds.includes(id));
-    usedIds.push(id);
-    const groupTag = t.type === 'Chat'
-      ? `[Grupo de ${300 + Math.floor(Math.random() * 701)} miembros] `
-      : '';
-    result.push({
-      id,
-      type: t.type,
-      author,
-      age,
-      content: `${groupTag}"${author}: ${content}"`,
-      timestamp: new Date().toLocaleTimeString(),
-      gravity,
-      correctCrime: t.crime as CrimeType,
-      details: t.details,
-    });
-  }
+  // ── 3. Merge, shuffle, sample targetCount ────────────────────────────────
+  const mixed = [...criminalPool, ...positivePool].sort(() => Math.random() - 0.5);
+  const result = mixed.slice(0, Math.min(targetCount, mixed.length)).map(mkEvidence);
 
-  return result.sort(() => Math.random() - 0.5);
+  if (result.length === 0) {
+    console.error(`[gameEngine] generateDayEvidences retornó vacío — día ${day}, nivel ${gameLevel}`);
+  }
+  return result;
 };

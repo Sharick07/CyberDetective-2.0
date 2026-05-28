@@ -218,33 +218,29 @@ export function useGameState() {
     nextMessageTimeRef.current = currentGameSeconds + delay;
   };
 
-  // Generate evidences for day 1 when the game starts (playerName set, no evidence yet, no processed IDs)
+  // Generate evidences for day 1 when the game starts (playerName set, no evidence yet)
   useEffect(() => {
-    if (
-      state.playerName !== '' &&
-      state.day === 1 &&
-      !state.isGameOver &&
-      state.evidenceCollected.length === 0 &&
-      state.processedEvidenceIds.length === 0
-    ) {
-      const excludeAge = state.rootAgeExclusionRemaining > 0 ? state.rootAgeExclusionAge : null;
-      const newEvidences = generateDayEvidences(1, [], excludeAge);
-      // Assign proper timestamps for day 1 starting messages (around 10:00-10:30 AM)
-      const timestampedEvidences = newEvidences.map((evidence, index) => ({
-        ...evidence,
-        timestamp: formatGameTime(0 + (index * 300)), // 10:00 AM + 5 minutes per message
-        content: `${evidence.content} (recibido a las ${formatGameTime(0 + (index * 300))})`,
-      }));
-      setState(prev => ({
+    if (state.playerName === '' || state.day !== 1 || state.isGameOver) return;
+
+    // Guard is INSIDE the functional setState so it always reads the latest state,
+    // never a stale closure value (fixes race conditions in React Strict Mode / batching).
+    setState(prev => {
+      if (prev.evidenceCollected.length > 0 || prev.processedEvidenceIds.length > 0) return prev;
+      const excludeAge = prev.rootAgeExclusionRemaining > 0 ? prev.rootAgeExclusionAge : null;
+      const generated = generateDayEvidences(1, [], excludeAge);
+      console.log('[GameState] Evidencias Día 1 cargadas:', generated);
+      if (generated.length === 0) {
+        console.error('[GameState] generateDayEvidences retornó vacío para Día 1 — revisar gameEngine');
+        return prev;
+      }
+      // Stamp game-time timestamps (10:00 AM + 5 min per slot); content is untouched.
+      const stamped = generated.map((ev, i) => ({ ...ev, timestamp: formatGameTime(i * 300) }));
+      return {
         ...prev,
-        evidenceCollected: timestampedEvidences,
-        currentEvidence: timestampedEvidences[0] || null,
-        rootAgeExclusionRemaining: prev.rootAgeExclusionAge !== null
-          ? Math.max(0, prev.rootAgeExclusionRemaining - timestampedEvidences.length)
-          : prev.rootAgeExclusionRemaining,
-      }));
-    }
-    // Intentionally does NOT include evidenceCollected.length — fires only at day start
+        evidenceCollected: stamped,
+        currentEvidence: stamped[0],
+      };
+    });
   }, [state.playerName, state.day, state.isGameOver]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tutorial 0 → 1: Día 1, primera evidencia disponible — saludo de Alex
@@ -706,12 +702,9 @@ export function useGameState() {
     // Generate evidences for the new day, excluding already processed IDs
     const excludeAge = state.rootAgeExclusionRemaining > 0 ? state.rootAgeExclusionAge : null;
     const rawEvidences = generateDayEvidences(nextDay, state.processedEvidenceIds, excludeAge);
-    // Assign proper timestamps for new day starting messages (around 10:00-10:30 AM)
-    const newEvidences = rawEvidences.map((evidence, index) => ({
-      ...evidence,
-      timestamp: formatGameTime(0 + (index * 300)), // 10:00 AM + 5 minutes per message
-      content: `${evidence.content} (recibido a las ${formatGameTime(0 + (index * 300))})`,
-    }));
+    console.log(`[GameState] Evidencias Día ${nextDay} cargadas:`, rawEvidences);
+    // Stamp game-time timestamps (10:00 AM + 5 min per slot); content is untouched.
+    const newEvidences = rawEvidences.map((ev, i) => ({ ...ev, timestamp: formatGameTime(i * 300) }));
 
     // Bribe offer from day 2+: parent/lawyer of a jailed suspect that hasn't been bribed yet
     // Only ~50% of eligible suspects will actually send a bribe email (random)
