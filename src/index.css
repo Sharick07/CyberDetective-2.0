@@ -4,12 +4,13 @@
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --font-vt323: "VT323", monospace;
   --font-jetbrains: "JetBrains Mono", monospace;
-  
-  --color-cyber-orange: #f69322;
-  --color-cyber-orange-dim: #8B5A2B;
+
+  /* Cyber Cyan Theme */
+  --color-cyber-orange: #00f9ff;
+  --color-cyber-orange-dim: #008b91;
   --color-cyber-beige: #D2C1A5;
   --color-cyber-bg: #000000;
-  --color-cyber-border: #5A3D1E;
+  --color-cyber-border: #006b70;
   --color-paper-bg: #d1c1a5;
 }
 
@@ -17,27 +18,35 @@
   html {
     font-size: 87.5%;
   }
+
   *, *::before, *::after {
     font-family: 'JetBrains Mono', monospace !important;
   }
+
   body {
     @apply bg-cyber-bg text-cyber-orange overflow-hidden h-screen w-screen select-none;
+    text-shadow: 0 0 6px rgba(0, 249, 255, 0.35);
   }
 }
 
 @layer components {
+
   .retro-border {
     @apply border-2 border-cyber-orange;
+    box-shadow:
+      0 0 5px rgba(0, 249, 255, 0.5),
+      inset 0 0 5px rgba(0, 249, 255, 0.2);
   }
 
   .panel-header {
     @apply bg-cyber-orange text-black font-bold px-2 py-0.5 text-sm flex justify-between items-center uppercase;
+    box-shadow: 0 0 12px rgba(0, 249, 255, 0.6);
   }
 
   .grid-bg {
-    background-image: 
-      linear-gradient(rgba(246, 147, 34, 0.1) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(246, 147, 34, 0.1) 1px, transparent 1px);
+    background-image:
+      linear-gradient(rgba(0, 249, 255, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 249, 255, 0.1) 1px, transparent 1px);
     background-size: 20px 20px;
   }
 
@@ -55,64 +64,98 @@
   }
 
   .btn-action {
-    @apply border border-cyber-orange text-cyber-orange px-3 py-1 uppercase text-xs transition-all hover:bg-cyber-orange hover:text-black;
+    @apply border border-cyber-orange text-cyber-orange px-3 py-1 uppercase text-xs transition-all;
+    box-shadow: 0 0 8px rgba(0, 249, 255, 0.3);
+  }
+
+  .btn-action:hover {
+    background: #00f9ff;
+    color: #000;
+    box-shadow:
+      0 0 10px #00f9ff,
+      0 0 20px rgba(0, 249, 255, 0.8),
+      0 0 40px rgba(0, 249, 255, 0.5);
   }
 
   .btn-primary {
-    @apply bg-cyber-orange text-black font-bold px-4 py-2 uppercase transition-all hover:brightness-110;
+    @apply bg-cyber-orange text-black font-bold px-4 py-2 uppercase transition-all;
+    box-shadow:
+      0 0 10px rgba(0, 249, 255, 0.6),
+      0 0 20px rgba(0, 249, 255, 0.3);
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.15);
+    box-shadow:
+      0 0 15px #00f9ff,
+      0 0 30px rgba(0, 249, 255, 0.8),
+      0 0 60px rgba(0, 249, 255, 0.4);
   }
 
   .cyber-scroll {
     scrollbar-width: thin;
     scrollbar-color: var(--color-cyber-orange) #000;
   }
+
   .cyber-scroll::-webkit-scrollbar {
     width: 5px;
     height: 5px;
   }
+
   .cyber-scroll::-webkit-scrollbar-track {
     background: #000;
     border-left: 1px solid var(--color-cyber-orange);
   }
+
   .cyber-scroll::-webkit-scrollbar-thumb {
     background: var(--color-cyber-orange);
+    box-shadow: 0 0 8px rgba(0, 249, 255, 0.7);
   }
+
   .cyber-scroll::-webkit-scrollbar-thumb:hover {
-    background: #ffa040;
+    background: #66fcff;
   }
 }
 
 @keyframes scan {
-  0% { top: 0; }
-  100% { top: 100%; }
+  0% {
+    top: 0;
+  }
+  100% {
+    top: 100%;
+  }
 }
 
 @keyframes dash-flow {
-  from { stroke-dashoffset: 8; }
-  to   { stroke-dashoffset: 0; }
+  from {
+    stroke-dashoffset: 8;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 /* CRT Flicker Effect */
 @keyframes flicker {
   0% { opacity: 0.97; }
   5% { opacity: 0.95; }
-  10% { opacity: 0.9; }
+  10% { opacity: 0.90; }
   15% { opacity: 0.95; }
   20% { opacity: 0.98; }
   25% { opacity: 0.95; }
-  30% { opacity: 0.9; }
+  30% { opacity: 0.90; }
   35% { opacity: 0.95; }
   40% { opacity: 0.98; }
   45% { opacity: 0.95; }
-  50% { opacity: 0.9; }
+  50% { opacity: 0.90; }
   55% { opacity: 0.95; }
   60% { opacity: 0.98; }
   65% { opacity: 0.95; }
-  70% { opacity: 0.9; }
+  70% { opacity: 0.90; }
   75% { opacity: 0.95; }
   80% { opacity: 0.98; }
   85% { opacity: 0.95; }
-  90% { opacity: 0.9; }
+  90% { opacity: 0.90; }
   95% { opacity: 0.95; }
   100% { opacity: 0.98; }
 }
@@ -121,12 +164,14 @@
   animation: flicker 0.15s infinite;
 }
 
-/* Keyboard navigation focus indicator — crime buttons */
+/* Keyboard navigation focus indicator */
 [data-crime-btn]:focus-visible {
-  outline: 2px solid #f69322;
+  outline: 2px solid #00f9ff;
   outline-offset: 2px;
-  box-shadow: 0 0 12px rgba(246, 147, 34, 0.6), 0 0 24px rgba(246, 147, 34, 0.25);
+  box-shadow:
+    0 0 12px rgba(0, 249, 255, 0.7),
+    0 0 24px rgba(0, 249, 255, 0.35),
+    0 0 48px rgba(0, 249, 255, 0.15);
   z-index: 10;
   position: relative;
 }
-

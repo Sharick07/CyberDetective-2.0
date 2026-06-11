@@ -201,9 +201,9 @@ const TutorialOverlay: React.FC<Props> = ({ playerName, onComplete, playAudio })
           animate={{
             opacity: [0.5, 1, 0.5],
             boxShadow: [
-              '0 0 8px rgba(246,147,34,0.5)',
-              '0 0 22px rgba(246,147,34,0.95)',
-              '0 0 8px rgba(246,147,34,0.5)',
+              '0 0 8px rgba(0,249,255,0.5)',
+              '0 0 22px rgba(0,249,255,0.95)',
+              '0 0 8px rgba(0,249,255,0.5)',
             ],
           }}
           transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
@@ -214,7 +214,7 @@ const TutorialOverlay: React.FC<Props> = ({ playerName, onComplete, playAudio })
             top: highlightRect.top - PADDING,
             width: highlightRect.width + PADDING * 2,
             height: highlightRect.height + PADDING * 2,
-            border: '2px solid #f69322',
+            border: '2px solid #00f9ff',
             pointerEvents: 'none',
           }}
         />
@@ -228,12 +228,16 @@ const TutorialOverlay: React.FC<Props> = ({ playerName, onComplete, playAudio })
         transition={{ duration: 0.22 }}
         style={getDialogueStyle()}
       >
-        <div style={{ background: '#000', border: '2px solid #f69322', boxShadow: '0 0 28px rgba(246,147,34,0.45)', padding: '1rem' }}>
+        <div style={{ background: '#000', border: '2px solid #00f9ff', boxShadow: `
+  0 0 10px rgba(0,249,255,0.4),
+  0 0 25px rgba(0,249,255,0.25),
+  inset 0 0 10px rgba(0,249,255,0.1)
+`, padding: '1rem' }}>
 
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid rgba(246,147,34,0.3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid rgba(0,249,255,0.3)' }}>
             <div style={{
-              width: 36, height: 36, background: '#f69322', color: '#000',
+              width: 36, height: 36, background: '#00f9ff', color: '#000',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontWeight: 'bold', fontSize: 11, letterSpacing: '0.04em',
               flexShrink: 0,
@@ -241,17 +245,17 @@ const TutorialOverlay: React.FC<Props> = ({ playerName, onComplete, playAudio })
               ALEX
             </div>
             <div>
-              <div style={{ fontSize: 14, color: '#f69322', textTransform: 'uppercase', letterSpacing: '0.12em', lineHeight: 1 }}>
+              <div style={{ fontSize: 14, color: '#00f9ff', textTransform: 'uppercase', letterSpacing: '0.12em', lineHeight: 1 }}>
                 Detective Alex
               </div>
-              <div style={{ fontSize: 10, color: 'rgba(246,147,34,0.55)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <div style={{ fontSize: 10, color: 'rgba(0,249,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Tutorial — Paso {step + 1} / {STEPS.length} &nbsp;·&nbsp; ← → para navegar
               </div>
             </div>
           </div>
 
           {/* Message */}
-          <p style={{ fontSize: 16, color: '#ffcc80', lineHeight: 1.5, marginBottom: 14, minHeight: 60 }}>
+          <p style={{ fontSize: 16, color: '#b8feff', lineHeight: 1.5, marginBottom: 14, minHeight: 60 }}>
             {msg}
           </p>
 
@@ -263,7 +267,7 @@ const TutorialOverlay: React.FC<Props> = ({ playerName, onComplete, playAudio })
                 title={s.label}
                 style={{
                   width: 10, height: 10,
-                  background: i === step ? '#f69322' : i < step ? 'rgba(246,147,34,0.45)' : 'rgba(246,147,34,0.15)',
+                  background: i === step ? '#00f9ff' : i < step ? 'rgba(0,249,255,0.45)' : 'rgba(0,249,255,0.15)',
                   transition: 'background 0.2s',
                 }}
               />
@@ -277,8 +281,8 @@ const TutorialOverlay: React.FC<Props> = ({ playerName, onComplete, playAudio })
                 onClick={goPrev}
                 style={{
                   padding: '4px 12px', fontSize: 14,
-                  border: '1px solid rgba(246,147,34,0.45)',
-                  color: 'rgba(246,147,34,0.7)',
+                  border: '1px solid rgba(0,249,255,0.45)',
+                  color: 'rgba(0,249,255,0.7)',
                   background: 'transparent', cursor: 'pointer',
                   textTransform: 'uppercase',
                   fontFamily: '"VT323", monospace',
@@ -291,11 +295,11 @@ const TutorialOverlay: React.FC<Props> = ({ playerName, onComplete, playAudio })
               onClick={goNext}
               style={{
                 padding: '4px 18px', fontSize: 15,
-                background: '#f69322', color: '#000',
+                background: '#00f9ff', color: '#000',
                 border: 'none', cursor: 'pointer',
                 fontWeight: 'bold', textTransform: 'uppercase',
                 fontFamily: '"VT323", monospace',
-                boxShadow: '0 0 10px rgba(246,147,34,0.5)',
+                boxShadow: '0 0 10px rgba(0,249,255,0.5)',
               }}
             >
               {isLast ? '¡Empezar!' : 'Siguiente ▶'}

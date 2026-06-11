@@ -31,7 +31,7 @@ const VERDICT_CONFIG: Record<
   },
   '': {
     label: 'EXPEDIENTE CERRADO',
-    borderColor: '#f69322', textColor: '#f69322', bg: 'transparent',
+    borderColor: '#00f9ff', textColor: '#00f9ff', bg: 'transparent',
   },
 };
 
@@ -51,7 +51,7 @@ const StatRow: React.FC<{
                     'text-orange-200 text-base'
       }
     >
-      {value}
+      {value}F
     </span>
   </div>
 );
